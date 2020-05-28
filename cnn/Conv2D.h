@@ -1,52 +1,158 @@
 #pragma once
-#include "Layer.h"
+#include "common.h"
 
-class Conv2D : public Layer
+class Conv2D
 {
 public:
-	int padding;
-	int stride;
-	vec<int> dim_input;
-	vec<int> dim_filter;
-	vec<int> dim_fmap;
-
-	Conv2D(const vec<int>& dim_filter, int padding, int stride, const vec<int>& dim_input);
-	~Conv2D();
-	void print_layer() override;
+	int in_size;
+	int filt_size;
+	int out_size;
+	int n_in;
+	int n_out;
+	int pad;
+	vector<Matrix> sum;
+	vector<Matrix> output;
+	vector<Matrix> delta;
+	vector<Matrix> Ws;
+	vector<Matrix> dWs;
+	Vector b;
+	Vector db;
+	vector<vector<int>> indices;
+public:
+	Conv2D(const vector<int>& input_size, const vector<int>& filter_size, int pad = 0, int init_opt = 0,
+		const vector<vector<int>>& indices = {});
+	~Conv2D() {}
+	void forward_propagate(const Matrix& x);
+	void forward_propagate(const vector<Matrix>& prev_out);
+	vector<Matrix> backward_propagate(const vector<Matrix>& prev_out);
+	void backward_propagate(const Matrix& prev_out);
+	void update_weight(double l_rate);
 };
 
-int out_size(int input_size, int filter_size, int padding, int stride)
+Conv2D::Conv2D(const vector<int>& input_size, const vector<int>& filter_size, int pad, int init_opt,
+	const vector<vector<int>>& indices) :
+	in_size(input_size[0]), filt_size(filter_size[0]),
+	out_size(calc_outsize(in_size, filt_size, 1, pad)),
+	n_in(input_size[2]), n_out(filter_size[2]), pad(pad),
+	indices(indices)
 {
-	return (int)floor((input_size + 2 * padding - filter_size) / stride) + 1;
+	sum.resize(n_out, Matrix(out_size, out_size));
+	output.resize(n_out, Matrix(out_size, out_size));
+	delta.resize(n_out, Matrix(out_size, out_size));
+	Ws.resize(n_out, Matrix(filt_size, filt_size));
+	dWs.resize(n_out, Matrix(filt_size, filt_size));
+	b.resize(n_out);
+	db.resize(n_out);
+
+	if (init_opt == 0)
+		init_filter_normal(Ws, b, filt_size * filt_size, out_size * out_size);
+	else
+		init_filter_uniform(Ws, b, in_size * in_size);
+	for (int i = 0; i < n_out; i++)
+		dWs[i].setZero();
+	db.setZero();
 }
 
-Conv2D::Conv2D(const vec<int>& dim_filter, int padding, int stride, const vec<int>& dim_input) :
-	Layer("Conv2D", (int)pow(out_size(dim_input[0], dim_filter[0], padding, stride), 2) * dim_filter[2]),
-	padding(padding),
-	stride(stride),
-	dim_input(dim_input),
-	dim_filter(dim_filter)
+void Conv2D::forward_propagate(const Matrix& x)
+// if this is the first layer
 {
-	int out = out_size(dim_input[0], dim_filter[0], padding, stride);
-	dim_fmap = { out, out, dim_filter[2] };
+	for (int i = 0; i < output.size(); i++)
+	{
+		sum[i] = conv2d(x, Ws[i], pad);
+		sum[i] += b[i];
+		output[i] = activate(sum[i]);
+	}
 }
 
-Conv2D::~Conv2D() {}
-
-void Conv2D::print_layer()
+void Conv2D::forward_propagate(const vector<Matrix>& prev_out)
 {
-	cout << "[ " << Layer::type << " layer ] :" << endl;
-	cout << "Number of node : " << n_node << endl;
-	cout << "Dimension of input : ";
-	for (int i = 0; i < 3; i++)
-		cout << dim_input[i] << " ";
-	cout << endl;
-	cout << "Dimension of filter : ";
-	for (int i = 0; i < 3; i++)
-		cout << dim_filter[i] << " ";
-	cout << endl;
-	cout << "Dimension of feature map : ";
-	for (int i = 0; i < 3; i++)
-		cout << dim_fmap[i] << " ";
-	cout << endl;
+	if (indices.size() == 0) // do not suffle input featuremap
+	{
+		for (int i = 0; i < output.size(); i++)
+		{
+			sum[i] = conv2d(prev_out[i], Ws[i], pad);
+			sum[i] += b[i];
+			output[i] = activate(sum[i]);
+		}
+	}
+	else
+	{
+		for (int j = 0; j < indices[0].size(); j++)
+		{
+			sum[j].setZero();
+			for (int i = 0; i < indices.size(); i++)
+			{
+				if (indices[i][j] != 0)
+					sum[j] += conv2d(prev_out[i], Ws[j], pad);
+			}
+			sum[j] += b[j];
+			output[j] = activate(sum[j]);
+		}
+	}
+}
+
+vector<Matrix> Conv2D::backward_propagate(const vector<Matrix>& prev_out)
+{
+	for (int i = 0; i < delta.size(); i++)
+		delta[i].element_wise(activate_prime(sum[i]));
+
+	vector<Matrix> prev_delta(prev_out.size(), Matrix(prev_out[0].rows(), prev_out[0].cols()));
+
+	if (indices.size() == 0)
+	{
+		for (int i = 0; i < Ws.size(); i++)
+		{
+			dWs[i] -= conv2d(prev_out[i], delta[i], pad);
+			db[i] -= delta[i].sum();
+		}
+
+		for (int i = 0; i < prev_delta.size(); i++)
+			prev_delta[i] = conv2d(delta[i], rotate_180(Ws[i]), filt_size - 1);
+	}
+	else
+	{	
+		for (int j = 0; j < indices[0].size(); j++)
+		{
+			for (int i = 0; i < indices.size(); i++)
+			{
+				if (indices[i][j] != 0)
+					dWs[j] -= conv2d(prev_out[i], delta[j], pad);
+			}
+			db[j] -= delta[j].sum();
+		}
+
+		for (int i = 0; i < indices.size(); i++)
+		{
+			prev_delta[i].setZero();
+			for (int j = 0; j < indices[0].size(); j++)
+				if (indices[i][j] != 0)
+					prev_delta[i] += conv2d(delta[j], rotate_180(Ws[j]), filt_size - 1);
+		}
+	}
+
+	return prev_delta;
+}
+
+void Conv2D::backward_propagate(const Matrix& prev_out)
+// if this is the first layer
+{
+	for (int i = 0; i < delta.size(); i++)
+		delta[i].element_wise(activate_prime(sum[i]));
+
+	for (int i = 0; i < Ws.size(); i++)
+	{
+		dWs[i] -= conv2d(prev_out, delta[i], pad);
+		db[i] -= delta[i].sum();
+	}
+}
+
+void Conv2D::update_weight(double l_rate)
+{
+	for (int i = 0; i < Ws.size(); i++)
+	{
+		Ws[i] -= l_rate * dWs[i];
+		dWs[i].setZero();
+	}
+	b -= l_rate * db;
+	db.setZero();
 }

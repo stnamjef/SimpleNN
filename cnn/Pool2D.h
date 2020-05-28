@@ -1,50 +1,49 @@
 #pragma once
-#include "Layer.h"
+#include "common.h"
 
-class Pooling2D : public Layer
+class Pool2D
 {
 public:
+	int in_size;
+	int filt_size;
+	int out_size;
+	int n_in;
+	int n_out;
 	int stride;
-	vec<int> dim_input;
-	vec<int> dim_filter;
-	vec<int> dim_fmap;
-
-	Pooling2D(const vec<int>& dim_filter, int stride, const vec<int>& dim_input);
-	~Pooling2D();
-	void print_layer() override;
+	int pool_opt;
+	vector<Matrix> output;
+	vector<Matrix> delta;
+public:
+	Pool2D(const vector<int>& input_size, const vector<int>& filter_size, int stride = 1, int pool_opt = 0);
+	~Pool2D() {}
+	void forward_propagate(const vector<Matrix>& prev_out);
+	vector<Matrix> backward_propagate(const vector<Matrix>& prev_out);
 };
 
-int out_size(int input_size, int filter_size, int stride)
+Pool2D::Pool2D(const vector<int>& input_size, const vector<int>& filter_size, int stride, int pool_opt) :
+	in_size(input_size[0]), filt_size(filter_size[0]),
+	out_size(calc_outsize(in_size, filt_size, stride, 0)),
+	n_in(input_size[2]), n_out(filter_size[2]), stride(stride), pool_opt(pool_opt)
 {
-	return (int)floor((input_size - filter_size) / stride) + 1;
+	output.resize(n_out, Matrix(out_size, out_size));
+	delta.resize(n_out, Matrix(out_size, out_size));
 }
 
-Pooling2D::Pooling2D(const vec<int>& dim_filter, int stride, const vec<int>& dim_input) :
-	Layer("Pooling2D", (int)pow(out_size(dim_input[0], dim_filter[0], stride), 2) * dim_filter[2]),
-	stride(stride),
-	dim_input(dim_input),
-	dim_filter(dim_filter)
+void Pool2D::forward_propagate(const vector<Matrix>& prev_out)
 {
-	int out = out_size(dim_input[0], dim_filter[0], stride);
-	dim_fmap = { out, out, dim_filter[2] };
+	for (int i = 0; i < output.size(); i++)
+		output[i] = pool2d(prev_out[i], filt_size, stride, pool_opt);
 }
 
-Pooling2D::~Pooling2D() {}
-
-void Pooling2D::print_layer()
+vector<Matrix> Pool2D::backward_propagate(const vector<Matrix>& prev_out)
 {
-	cout << "[ " << Layer::type << " layer ] :" << endl;
-	cout << "Number of node : " << n_node << endl;
-	cout << "Dimension of input : ";
-	for (int i = 0; i < 3; i++)
-		cout << dim_input[i] << " ";
-	cout << endl;
-	cout << "Dimension of filter : ";
-	for (int i = 0; i < 3; i++)
-		cout << dim_filter[i] << " ";
-	cout << endl;
-	cout << "Dimension of feature map : ";
-	for (int i = 0; i < 3; i++)
-		cout << dim_fmap[i] << " ";
-	cout << endl;
+	vector<Matrix> prev_delta(prev_out.size());
+	for (int i = 0; i < prev_delta.size(); i++)
+	{
+		if (pool_opt == 0)
+			prev_delta[i] = delta_img_max(prev_out[i], delta[i], filt_size, stride);
+		else
+			prev_delta[i] = delta_img_avg(prev_out[0].rows(), delta[i], filt_size, stride);
+	}
+	return prev_delta;
 }
