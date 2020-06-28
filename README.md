@@ -195,8 +195,11 @@ model.fit(train_X, train_Y, l_rate, n_epoch, batch, lambda, test_X, test_Y);
 
 
 
-- Report
-- Demo video
+- [Report](reports/final_report.pdf)
+
+- [Demo video](reports/demo.mp4)
+
+
 
 
 
