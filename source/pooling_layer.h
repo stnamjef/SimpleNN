@@ -44,7 +44,6 @@ namespace simple_nn
 
 		void forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction) override
 		{
-			//#pragma omp parallel for
 			for (int batch = 0; batch < prev_out.size(); batch++)
 				for (int ch = 0; ch < out_channels; ch++)
 					output[batch][ch] = pool2d(prev_out[batch][ch], filt_size, stride, pool_opt);
@@ -55,7 +54,6 @@ namespace simple_nn
 			int batch_size = (int)prev_out.size();
 			vector<vector<Matrix>> prev_delta(batch_size, vector<Matrix>(in_channels));
 
-			//#pragma omp parallel for
 			for (int batch = 0; batch < batch_size; batch++)
 				for (int ch = 0; ch < in_channels; ch++)
 					prev_delta[batch][ch] = delta_img(prev_out[batch][ch], delta[batch][ch], filt_size, stride, pool_opt);

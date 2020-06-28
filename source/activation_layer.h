@@ -24,7 +24,6 @@ namespace simple_nn
 
 		void forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction) override
 		{
-			//#pragma omp parallel for
 			for (int batch = 0; batch < prev_out.size(); batch++)
 				for (unsigned int ch = 0; ch < prev_out[batch].size(); ch++)
 					output[batch][ch] = activate(prev_out[batch][ch], opt);

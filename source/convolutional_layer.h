@@ -68,7 +68,6 @@ namespace simple_nn
 
 		void forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction) override
 		{
-			//#pragma omp parallel for
 			for (int batch = 0; batch < prev_out.size(); batch++)
 				for (int out_ch = 0; out_ch < out_channels; out_ch++)
 				{
@@ -88,7 +87,6 @@ namespace simple_nn
 			int r = prev_out.at(0).at(0).rows(), c = prev_out.at(0).at(0).cols();
 			vector<vector<Matrix>> prev_delta(batch_size, vector<Matrix>(in_channels, Matrix(r, c)));
 
-			//#pragma omp parallel for
 			for (int batch = 0; batch < batch_size; batch++)
 			{
 				// calc delta w.r.t weight & bias of this layer

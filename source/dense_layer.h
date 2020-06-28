@@ -52,7 +52,6 @@ namespace simple_nn
 
 		void forward_propagate(const vector<vector<Vector>>& prev_out, bool isPrediction) override
 		{
-			//#pragma omp parallel for
 			for (int batch = 0; batch < prev_out.size(); batch++)
 				output[batch][0] = W * prev_out[batch][0] + b;
 		}
