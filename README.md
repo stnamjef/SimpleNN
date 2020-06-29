@@ -50,16 +50,31 @@
 
 ## 2. Schedule
 
-
-
-|     추진내용     | 3월  | 4월  | 5월  | 6월  |
-| :--------------: | :--: | :--: | :--: | :--: |
-|  선행 연구 리뷰  |  O   |  O   |      |      |
-|   LeNet-5 구현   |  O   |  O   |  O   |      |
-| 활성화 함수 변경 |      |      |  O   |      |
-| 가중치 감쇠 구현 |      |      |  O   |      |
-| 배치 정규화 구현 |      |      |  O   |  O   |
-|    성능 측정     |      |      |  O   |  O   |
+| 주차      | 내용                                                         |
+| --------- | ------------------------------------------------------------ |
+| 2 ~ 3주차 | - 관심 주제 탐구 및 신청서 작성.                             |
+| 4주차     | - DNN 구현.                                                  |
+|           | - irist 데이터셋을 이용하여 성능을 측정.                     |
+| 5주차     | - DNN에 (1) Xavier initialization, (2) Min-max normalization을 적용. |
+|           | - MNIST 데이터셋을 이용하여 성능을 측정.                     |
+| 6주차     | - LeNet-5 구현 시작.                                         |
+|           | - (1) Convolution, (2) Pooling 연산 구현.                    |
+| 7주차     | - 논문 리뷰: Yann LeCun, Leon Bottou, Yoshua Bengio, & Patric Haffiner (1998), Gradient-based learning applied to document recognition, Proceedings of the IEEE. |
+| 8주차     | - CNN의 오차 역전파 과정의 이론적인 내용 학습.               |
+| 9주차     | - matrix.h(행렬 연산을 위한 헤더) 구현.                      |
+| 10주차    | - LeNet-5 구현 완료.                                         |
+|           | - (1) layer.h, (2) convolutional_layer.h, (3) dense_layer.h, (4) activation_layer.h, (5) output_layer.h (6) network.h 구현. |
+| 11주차    | - MNIST 데이터셋을 이용하여 성능 측정.                       |
+|           | - 성능 측정 과정에서 Pooling 연산에서 버그가 발견되어 수정.  |
+| 12주차    | - Tanh + MSE 모델(기준이 되는 모델; baseline model)의 성능을 측정. |
+| 13주차    | - (1) 활성화 함수(softmax), (2) 손실 함수(Cross entropy), (3) 규제 항(L2 norm) 구현. |
+|           | - Tanh + MSE + Regularization 모델 성능 측정.                |
+|           | - ReLu + Softmax + Cross entropy 모델 성능 측정.             |
+|           | - ReLu + Softmax + Cross entropy + Regularization 모델 성능 측정. |
+| 14 주차   | - Batch normalization 구현.                                  |
+|           | - Tanh + MSE + Batch normalization 모델 성능 측정.           |
+|           | - ReLu + Softmax + Cross entropy + Batch normalization 모델 성능 측정. |
+| 15주차    | - 소스코드 정리 및 보고서 작성                               |
 
 
 
@@ -195,15 +210,18 @@ model.fit(train_X, train_Y, l_rate, n_epoch, batch, lambda, test_X, test_Y);
 
 
 
-- [Report](reports/final_report.pdf)
-
-- [Demo video](reports/demo.mp4)
-
+- Report
+- Demo video
 
 
 
+## 7. Reference
 
 
 
-
+- Yann LeCun, Leon Bottou, Yoshua Bengio, & Patric Haffiner (1998), Gradient-based learning applied to document recognition, Proceedings of the IEEE.
+- Sergey Ioffe, Christian Szegedy (2015), Batch Normalization: Accelerating deep network training by reducing internal covariate shift, Proceedings of the ICML.
+- Yiliang Xie, Hongyuan Jin, & Eric C.C. Tsang (2017), Improving the lenet with batch normalization and online hard example mining for digits recognition, Proceedings of the 
+- 오일석 (2017), 기계 학습, 한빛아카데미
+- 오일석 (2008), 패턴인식, 교보문고
 
