@@ -59,11 +59,12 @@
 |         | - MNIST 데이터셋을 이용하여 성능을 측정.                     |
 |  6주차  | - LeNet-5 구현 시작.                                         |
 |         | - (1) Convolution, (2) Pooling 연산 구현.                    |
-|  7주차  | - 논문 리뷰: Yann LeCun et al. (1998), Gradient-based learning applied to document recognition, Proceedings of the IEEE. |
+|  7주차  | - 논문 리뷰: Yann LeCun et al. (1998), Gradient-based learning applied to document recognition. |
 |  8주차  | - CNN의 오차 역전파 과정의 이론적인 내용 학습.               |
 |  9주차  | - matrix.h(행렬 연산을 위한 헤더) 구현.                      |
 | 10주차  | - LeNet-5 구현 완료.                                         |
-|         | - (1) layer.h, (2) convolutional_layer.h, (3) dense_layer.h, (4) activation_layer.h, (5) output_layer.h (6) network.h 구현. |
+|         | - (1) layer.h, (2) convolutional_layer.h, (3) pooling_layer.h |
+|         | - (4) dense_layer.h, (5) activation_layer.h, (6) output_layer.h 구현. |
 | 11주차  | - MNIST 데이터셋을 이용하여 성능 측정.                       |
 |         | - 성능 측정 과정에서 Pooling 연산에서 버그가 발견되어 수정.  |
 | 12주차  | - Tanh + MSE 모델(기준이 되는 모델; baseline model)의 성능을 측정. |
