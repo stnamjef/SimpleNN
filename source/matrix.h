@@ -35,7 +35,7 @@ namespace simple_nn
 		double sum() const;
 		double mean() const;
 		double var(double mean) const;
-		Matrix element_wise(const Matrix& other);
+		Matrix element_wise(const Matrix& other) const;
 		Matrix transpose() const;
 
 
@@ -54,12 +54,16 @@ namespace simple_nn
 		friend Matrix operator*(const Matrix& one, const Matrix& other);
 		friend Matrix operator*(double num, const Matrix& mat);
 		friend Matrix operator*(const Matrix& mat, double num);
+		friend Matrix operator/(const Matrix& one, const Matrix& other);
+		friend Matrix operator/(const Matrix& mat, double num);
+		friend Matrix operator/(double num, const Matrix& mat);
 		friend void operator+=(const Matrix& one, const Matrix& other);
 		friend void operator+=(const Matrix& mat, double num);
 		friend void operator-=(const Matrix& one, const Matrix& other);
 		friend void operator-=(const Matrix& mat, double num);
 		friend void operator*=(const Matrix& one, const Matrix& other);
 		friend void operator*=(const Matrix& mat, double num);
+		friend void operator/=(const Matrix& mat, double num);
 
 		friend ostream& operator<<(ostream& out, const Matrix& mat);
 	};
@@ -142,7 +146,7 @@ namespace simple_nn
 		return var / _size;
 	}
 
-	Matrix Matrix::element_wise(const Matrix& other)
+	Matrix Matrix::element_wise(const Matrix& other) const
 	{
 		if (row != other.row || col != other.col)
 		{
@@ -255,7 +259,6 @@ namespace simple_nn
 
 		Matrix out(one.row, other.col);
 
-		//#pragma omp parallel for
 		for (int i = 0; i < one.row; i++)
 			for (int j = 0; j < other.col; j++)
 			{
@@ -278,6 +281,32 @@ namespace simple_nn
 	{
 		Matrix out(mat.row, mat.col);
 		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::multiplies<double>(), num));
+		return out;
+	}
+
+	Matrix operator/(const Matrix& one, const Matrix& other)
+	{
+		if (one.row != other.row || one.col != other.col)
+		{
+			cout << "Matrix::operator/: Matrices are incompatible." << endl;
+			exit(100);
+		}
+		Matrix out(one.row, one.col);
+		std::transform(one.mat, one.mat + one._size, other.mat, out.mat, std::divides<double>());
+		return out;
+	}
+
+	Matrix operator/(const Matrix& mat, double num)
+	{
+		Matrix out(mat.row, mat.col);
+		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::divides<double>(), num));
+		return out;
+	}
+
+	Matrix operator/(double num, const Matrix& mat)
+	{
+		Matrix out(mat.row, mat.col);
+		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind1st(std::divides<double>(), num));
 		return out;
 	}
 
@@ -324,6 +353,11 @@ namespace simple_nn
 	void operator*=(const Matrix& mat, double num)
 	{
 		std::for_each(mat.mat, mat.mat + mat._size, [&](double& elem) { elem *= num; });
+	}
+
+	void operator/=(const Matrix& mat, double num)
+	{
+		std::for_each(mat.mat, mat.mat + mat._size, [&](double& elem) { elem /= num; });
 	}
 
 	ostream& operator<<(ostream& out, const Matrix& mat)

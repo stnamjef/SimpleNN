@@ -54,14 +54,14 @@
 | :-----: | :----------------------------------------------------------- |
 | 2~3주차 | - 관심 주제 탐구 및 신청서 작성.                             |
 |  4주차  | - DNN 구현.                                                  |
-|         | - irist 데이터셋을 이용하여 성능을 측정.                     |
+|         | - Iris 데이터셋을 이용하여 성능을 측정.                      |
 |  5주차  | - DNN에 Xavier initialization, Min-max normalization을 적용. |
 |         | - MNIST 데이터셋을 이용하여 성능을 측정.                     |
 |  6주차  | - LeNet-5 구현 시작.                                         |
 |         | - Convolution, Pooling 연산 구현.                            |
 |  7주차  | - 논문 리뷰: Yann LeCun et al. (1998), Gradient-based learning applied to document recognition. |
 |  8주차  | - CNN의 오차 역전파 과정의 이론적인 내용 학습.               |
-|  9주차  | - matrix.h(행렬 연산을 위한 헤더) 구현.                      |
+|  9주차  | - matrix.h(행렬 연산을 위한 클래스) 구현.                    |
 | 10주차  | - LeNet-5 구현 완료.                                         |
 |         | - common.h, layer.h, convolutional_layer.h, pooling_layer.h, |
 |         | - dense_layer.h, activation_layer.h, output_layer.h 구현.    |
@@ -75,8 +75,8 @@
 |         | - (5) ReLu + Softmax + Cross entropy + Regularization(0.001) 모델 성능 측정. |
 |         | - (6) Relu + Softmax + Cross entropy + Regularization(0.01) 모델 성능 측정. |
 | 14 주차 | - Batch normalization 구현.                                  |
-|         | - (8) Tanh + MSE + Batch normalization 모델 성능 측정.       |
-|         | - (9) ReLu + Softmax + Cross entropy + Batch normalization 모델 성능 측정. |
+|         | - (7) Tanh + MSE + Batch normalization 모델 성능 측정.       |
+|         | - (8) ReLu + Softmax + Cross entropy + Batch normalization 모델 성능 측정. |
 | 15주차  | - 소스코드 정리 및 보고서 작성                               |
 
 

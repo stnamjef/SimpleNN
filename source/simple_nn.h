@@ -34,13 +34,13 @@ namespace simple_nn
 
 	vector<vector<Vector>> get_batch(const Vector& Y, vector<int>& batch_idx);
 
-	void set_batch(const vector<Layer*>& net, int batch_size, int n_batch);
+	void set_batch(const vector<Layer*>& net, int batch_size);
 
 	void forward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, int batch_size, bool isPrediction = false);
 
 	void backward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, const vector<vector<Vector>>& Y, int batch_size);
 
-	void update_weight(const vector<Layer*>& net, double l_rate, double lambda, int batch_size);
+	void update_weight(const vector<Layer*>& net, double l_rate, double lambda);
 
 	//---------------------------------------------- function definition ----------------------------------------------
 
@@ -60,7 +60,7 @@ namespace simple_nn
 
 		for (int epoch = 0; epoch < n_epoch; epoch++)
 		{
-			set_batch(net, batch_size, n_batch);
+			set_batch(net, batch_size);
 
 			double train_loss = 0.0, test_loss = 0.0;
 			double train_error = 0.0, test_error = 0.0;
@@ -69,7 +69,7 @@ namespace simple_nn
 			{
 				forward_propagate(net, get_batch(X, batches[n]), batch_size);
 				backward_propagate(net, get_batch(X, batches[n]), get_batch(Y, batches[n]), batch_size);
-				update_weight(net, l_rate, lambda, batch_size);
+				update_weight(net, l_rate, lambda);
 			}
 
 			train_error = calc_error(Y, predict(X, Y, train_loss));
@@ -89,8 +89,8 @@ namespace simple_nn
 		for (int i = 0; i < ranNum.size(); i++)
 			ranNum[i] = i;
 
-		unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
-		std::shuffle(ranNum.begin(), ranNum.end(), std::default_random_engine(seed));
+		/*unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
+		std::shuffle(ranNum.begin(), ranNum.end(), std::default_random_engine(seed));*/
 
 		vector<vector<int>> batches(n_batch, vector<int>(batch_size));
 		for (int i = 0; i < n_batch; i++)
@@ -118,10 +118,10 @@ namespace simple_nn
 		return batch;
 	}
 
-	void set_batch(const vector<Layer*>& net, int batch_size, int n_batch)
+	void set_batch(const vector<Layer*>& net, int batch_size)
 	{
 		for (const auto& layer : net)
-			layer->set_batch(batch_size, n_batch);
+			layer->set_batch(batch_size);
 	}
 
 	void forward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, int batch_size, bool isPrediction)
@@ -177,7 +177,7 @@ namespace simple_nn
 		}
 	}
 
-	void update_weight(const vector<Layer*>& net, double l_rate, double lambda, int batch_size)
+	void update_weight(const vector<Layer*>& net, double l_rate, double lambda)
 	{
 		for (const auto& layer : net)
 		{
@@ -185,7 +185,7 @@ namespace simple_nn
 				layer->type != LayerType::ACTIVATION &&
 				layer->type != LayerType::OUTPUT)
 			{
-				layer->update_weight(l_rate, lambda, batch_size);
+				layer->update_weight(l_rate, lambda);
 			}
 		}
 	}
@@ -193,7 +193,7 @@ namespace simple_nn
 	Vector SimpleNN::predict(const vector<Matrix>& X, const Vector& Y, double& loss)
 	{
 		int n_data = (int)X.size();
-		set_batch(net, 1, n_data);
+		set_batch(net, 1);
 
 		Vector predicts(n_data);
 		for (int i = 0; i < n_data; i++)
@@ -205,7 +205,7 @@ namespace simple_nn
 			predicts[i] = max_idx(output);
 
 			if (net.back()->get_loss_opt() == Loss::MSE)
-				loss += 0.5 * pow2(as_vector((int)Y[i], 10) - output).sum();
+				loss += 0.5 * pow2d(as_vector((int)Y[i], 10) - output).sum();
 			else
 				loss += -log(softmax(output)[(int)Y[i]]);
 		}

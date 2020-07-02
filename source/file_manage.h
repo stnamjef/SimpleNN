@@ -50,6 +50,37 @@ namespace simple_nn
 		}
 	}
 
+	void ReadMNIST1d(string img_name, int NumberOfImages, int DataOfAnImage, vector<Vector>& arr)
+	{
+		arr.resize(NumberOfImages, Vector(784));
+
+		ifstream file(img_name, ios::binary);
+		if (file.is_open())
+		{
+			int magic_number = 0;
+			int number_of_images = 0;
+			int n_rows = 0;
+			int n_cols = 0;
+
+			file.read((char*)&magic_number, sizeof(magic_number));
+			magic_number = ReverseInt(magic_number);
+			file.read((char*)&number_of_images, sizeof(number_of_images));
+			number_of_images = ReverseInt(number_of_images);
+			file.read((char*)&n_rows, sizeof(n_rows));
+			n_rows = ReverseInt(n_rows);
+			file.read((char*)&n_cols, sizeof(n_cols));
+			n_cols = ReverseInt(n_cols);
+
+			for (int i = 0; i < NumberOfImages; i++)
+				for (int j = 0; j < DataOfAnImage; j++)
+				{
+					unsigned char temp = 0;
+					file.read((char*)&temp, sizeof(temp));
+					arr[i][j] = (double)temp / 255 * (1.175 + 0.1) - 0.1;
+				}
+		}
+	}
+
 	void ReadMNISTLabel(string label_name, int NumberOfImages, Vector& arr)
 	{
 		arr.resize(NumberOfImages);
