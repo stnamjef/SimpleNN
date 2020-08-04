@@ -9,123 +9,151 @@ namespace simple_nn
 		int batch_size;
 		int n_input;
 		int n_node;
+		string init_opt;
 		Matrix W;
 		Matrix dW;
 		Vector b;
 		Vector db;
 	public:
-		Dense(int n_input,
-			int n_node,
-			Init opt = Init::NORMAL,
-			const Matrix& W_trained = {},
-			const Matrix& b_trained = {});
-
-		~Dense() {}
-
-		void set_batch(int batch_size) override;
-
-		void forward_propagate(const vector<vector<Vector>>& prev_out, bool isPrediction) override;
-
-		vector<vector<Vector>> backward_propagate(const vector<vector<Vector>>& prev_out, bool isFirst) override;
-
+		Dense(int n_node, string init_opt, int n_input = 0);
+		void set_layer(int batch_size, const vector<int>& input_shape) override;
+		void reset_batch(int batch_size) override;
+		void forward_propagate(const Tensor& prev_out, bool isPrediction) override;
+		void backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst) override;
 		void update_weight(double l_rate, double lambda) override;
+		vector<int> input_shape() override;
+		vector<int> output_shape() override;
+	private:
+		void init_weight(int n_in, int n_out);
 	};
 
-	void init_weight(Matrix& W, Init opt, int n_in, int n_out);
+	Dense::Dense(int n_node, string init_opt, int n_input) :
+		Layer("dense"),
+		batch_size(0),
+		n_input(n_input),
+		n_node(n_node),
+		init_opt(init_opt) {}
 
-	//------------------------------- function definition -------------------------------
-
-	Dense::Dense(int n_input,
-				 int n_node,
-				 Init opt,
-				 const Matrix& W_trained,
-				 const Matrix& b_trained) :
-				 Layer(LayerType::DENSE),
-				 batch_size(0),
-				 n_input(n_input),
-				 n_node(n_node)
+	void Dense::set_layer(int batch_size, const vector<int>& input_shape)
 	{
+		this->batch_size = batch_size;
+		if (input_shape.size() == 1) {
+			n_input = input_shape[0];
+		}
+		else {
+			cout << "Dense::set_layer(int ...): Add a flatten layer." << endl;
+			exit(100);
+		}
+		output.resize(batch_size, 1, n_node);
+		delta.resize(batch_size, 1, n_node);
 		W.resize(n_node, n_input);
 		dW.resize(n_node, n_input);
 		b.resize(n_node);
 		db.resize(n_node);
-
-		if (W_trained.size() != 0)
-		{
-			W = W_trained;
-			b = b_trained;
-		}
-		else
-		{
-			init_weight(W, opt, n_input, n_node);
-			b.setZero();
-			dW.setZero();
-			db.setZero();
-		}
+		init_weight(n_input, n_node);
+		b.setZero();
+		dW.setZero();
+		db.setZero();
 	}
 
-	void init_weight(Matrix& W, Init opt, int n_in, int n_out)
+	void Dense::reset_batch(int batch_size)
+	{
+		this->batch_size = batch_size;
+		output.resize(batch_size, 1, n_node);
+	}
+
+	void Dense::init_weight(int n_in, int n_out)
 	{
 		unsigned seed = (unsigned)chrono::steady_clock::now().time_since_epoch().count();
 		default_random_engine e(444);
 
-		if (opt == Init::NORMAL)
-		{
+		if (init_opt == "norml") {
 			double var = std::sqrt(2 / ((double)n_in + n_out));
 			normal_distribution<double> dist(0, var);
-
-			for (int i = 0; i < W.rows(); i++)
-				for (int j = 0; j < W.cols(); j++)
+			for (int i = 0; i < n_node; i++) {
+				for (int j = 0; j < n_input; j++) {
 					W(i, j) = dist(e);
+				}
+			}
 		}
-		else
-		{
+		else {
 			double r = 1 / std::sqrt((double)n_in);
 			uniform_real_distribution<double> dist(-r, r);
-
-			for (int i = 0; i < W.rows(); i++)
-				for (int j = 0; j < W.cols(); j++)
+			for (int i = 0; i < n_node; i++) {
+				for (int j = 0; j < n_input; j++) {
 					W(i, j) = dist(e);
+				}
+			}
 		}
 	}
 
-	void Dense::set_batch(int batch_size)
+	void Dense::forward_propagate(const Tensor& prev_out, bool isPrediction)
 	{
-		this->batch_size = batch_size;
-		output.resize(batch_size, vector<Vector>(1, Vector(n_node)));
-		delta.resize(batch_size, vector<Vector>(1, Vector(n_node)));
-	}
+		// fast operation
+		for (int n = 0; n < batch_size; n++) {
+			for (int i = 0; i < n_node; i++) {
+				output[n][0](i) = b(i);
+				for (int k = 0; k < n_input; k++) {
+					output[n][0](i) += W(i, k) * prev_out[n][0](k);
+				}
+			}
+		}
 
-	void Dense::forward_propagate(const vector<vector<Vector>>& prev_out, bool isPrediction)
-	{
-		for (int n = 0; n < batch_size; n++)
+		/*for (int n = 0; n < batch_size; n++) {
 			output[n][0] = W * prev_out[n][0] + b;
+		}*/
 	}
 
-	vector<vector<Vector>> Dense::backward_propagate(const vector<vector<Vector>>& prev_out, bool isFirst)
+	void Dense::backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst)
 	{
-		// calc delta w.r.t weight & bias of this layer
-		for (int n = 0; n < batch_size; n++)
-		{
+		// fast operation
+		for (int n = 0; n < batch_size; n++) {
+			for (int i = 0; i < n_node; i++) {
+				for (int j = 0; j < n_input; j++) {
+					dW(i, j) += delta[n][0](i) * prev_out[n][0](j);
+				}
+				db(i) += delta[n][0](i);
+			}
+		}
+		if (!isFirst) {
+			for (int n = 0; n < batch_size; n++) {
+				prev_delta[n][0].setZero();
+				for (int i = 0; i < n_node; i++) {
+					double temp = delta[n][0](i);
+					for (int j = 0; j < n_input; j++) {
+						prev_delta[n][0](j) += W(i, j) * temp;
+					}
+				}
+			}
+		}
+
+		/*for (int n = 0; n < batch_size; n++) {
 			dW += delta[n][0] * prev_out[n][0].transpose();
 			db += delta[n][0];
 		}
-
-		vector<vector<Vector>> prev_delta(batch_size, vector<Vector>(1));
-		if (!isFirst)
-		{
-			for (int n = 0; n < batch_size; n++)
+		if (!isFirst) {
+			for (int n = 0; n < batch_size; n++) {
 				prev_delta[n][0] = W.transpose() * delta[n][0];
-		}
-		return prev_delta;
+			}
+		}*/
 	}
 
 	void Dense::update_weight(double l_rate, double lambda)
 	{
 		W = (1 - (2 * l_rate * lambda) / batch_size) * W - (l_rate / batch_size) * dW;
 		b = (1 - (2 * l_rate * lambda) / batch_size) * b - (l_rate / batch_size) * db;
-
 		dW.setZero();
 		db.setZero();
 	}
+
+	vector<int> Dense::input_shape()
+	{
+		if (n_input == 0) {
+			cout << "Dense::input_shape(): Input shape is empty." << endl;
+			exit(100);
+		}
+		return { n_input };
+	}
+
+	vector<int> Dense::output_shape() { return { n_node }; }
 }
