@@ -1,10 +1,7 @@
 #pragma once
-#include <iostream>
 #include <fstream>
-#include <vector>
 #include <string>
-#include "matrix.h"
-using namespace std;
+#include "tensor.h"
 
 namespace simple_nn
 {
@@ -18,13 +15,10 @@ namespace simple_nn
 		return((int)ch1 << 24) + ((int)ch2 << 16) + ((int)ch3 << 8) + ch4;
 	}
 
-	void ReadMNIST(string img_name, int NumberOfImages, int DataOfAnImage, vector<Matrix>& arr)
+	void ReadMNIST(string img_name, int NumberOfImages, int DataOfAnImage, Tensor& arr, bool asVector = false)
 	{
-		arr.resize(NumberOfImages, Matrix(28, 28));
-
 		ifstream file(img_name, ios::binary);
-		if (file.is_open())
-		{
+		if (file.is_open()) {
 			int magic_number = 0;
 			int number_of_images = 0;
 			int n_rows = 0;
@@ -39,45 +33,28 @@ namespace simple_nn
 			file.read((char*)&n_cols, sizeof(n_cols));
 			n_cols = ReverseInt(n_cols);
 
-			for (int i = 0; i < NumberOfImages; ++i)
-				for (int r = 0; r < n_rows; ++r)
-					for (int c = 0; c < n_cols; ++c)
-					{
+			if (!asVector) {
+				arr.resize(NumberOfImages, 1, n_rows, n_cols);
+				for (int n = 0; n < NumberOfImages; n++) {
+					for (int i = 0; i < n_rows; i++) {
+						for (int j = 0; j < n_cols; j++) {
+							unsigned char temp = 0;
+							file.read((char*)&temp, sizeof(temp));
+							arr[n][0](i, j) = (double)temp / 255 * (1.175 + 0.1) - 0.1;
+						}
+					}
+				}
+			}
+			else {
+				arr.resize(NumberOfImages, 1, n_rows * n_cols);
+				for (int n = 0; n < NumberOfImages; n++) {
+					for (int i = 0; i < n_rows * n_cols; i++) {
 						unsigned char temp = 0;
 						file.read((char*)&temp, sizeof(temp));
-						arr[i](r, c) = (double)temp / 255 * (1.175 + 0.1) - 0.1;
+						arr[n][0](i) = (double)temp / 255 * (1.175 + 0.1) - 0.1;
 					}
-		}
-	}
-
-	void ReadMNIST1d(string img_name, int NumberOfImages, int DataOfAnImage, vector<Vector>& arr)
-	{
-		arr.resize(NumberOfImages, Vector(784));
-
-		ifstream file(img_name, ios::binary);
-		if (file.is_open())
-		{
-			int magic_number = 0;
-			int number_of_images = 0;
-			int n_rows = 0;
-			int n_cols = 0;
-
-			file.read((char*)&magic_number, sizeof(magic_number));
-			magic_number = ReverseInt(magic_number);
-			file.read((char*)&number_of_images, sizeof(number_of_images));
-			number_of_images = ReverseInt(number_of_images);
-			file.read((char*)&n_rows, sizeof(n_rows));
-			n_rows = ReverseInt(n_rows);
-			file.read((char*)&n_cols, sizeof(n_cols));
-			n_cols = ReverseInt(n_cols);
-
-			for (int i = 0; i < NumberOfImages; i++)
-				for (int j = 0; j < DataOfAnImage; j++)
-				{
-					unsigned char temp = 0;
-					file.read((char*)&temp, sizeof(temp));
-					arr[i][j] = (double)temp / 255 * (1.175 + 0.1) - 0.1;
 				}
+			}
 		}
 	}
 
@@ -85,51 +62,12 @@ namespace simple_nn
 	{
 		arr.resize(NumberOfImages);
 		ifstream file(label_name);
-		for (int i = 0; i < NumberOfImages + 8; ++i)
-		{
+		for (int i = 0; i < NumberOfImages + 8; ++i) {
 			unsigned char temp = 0;
 			file.read((char*)&temp, sizeof(temp));
-
-			if (i > 7)
-				arr[i - 8] = (int)temp;
-		}
-	}
-
-	void write_matrix(ofstream& out, const Matrix& mat)
-	{
-		for (int i = 0; i < mat.rows(); i++)
-		{
-			for (int j = 0; j < mat.cols(); j++)
-				out << mat(i, j) << ',';
-			out << endl;
-		}
-	}
-
-	void write_vector(ofstream& out, const Vector& vec)
-	{
-		for (int i = 0; i < vec.size(); i++)
-			out << vec[i] << ',';
-		out << endl;
-	}
-
-	void read_matrix(ifstream& fin, Matrix& mat)
-	{
-		string buf;
-		for (int i = 0; i < mat.rows(); i++)
-			for (int j = 0; j < mat.cols(); j++)
-			{
-				getline(fin, buf, ',');
-				mat(i, j) = stod(buf);
+			if (i > 7) {
+				arr(i - 8) = (int)temp;
 			}
-	}
-
-	void read_vector(ifstream& fin, Vector& vec)
-	{
-		string buf;
-		for (int i = 0; i < vec.size(); i++)
-		{
-			getline(fin, buf, ',');
-			vec[i] = stod(buf);
 		}
 	}
 }

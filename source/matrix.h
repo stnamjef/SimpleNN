@@ -11,9 +11,9 @@ namespace simple_nn
 	class Matrix
 	{
 	private:
-		double* mat;
-		int row;
-		int col;
+		double* _data;
+		int _row;
+		int _col;
 		int _size;
 	public:
 		Matrix();
@@ -35,12 +35,12 @@ namespace simple_nn
 		double sum() const;
 		double mean() const;
 		double var(double mean) const;
-		Matrix element_wise(const Matrix& other) const;
+		Matrix pow(int num) const;
+		Matrix sqrt() const;
+		Matrix elem_wise_mult(const Matrix& other) const;
 		Matrix transpose() const;
-
-
-		double& operator[](const int& i);
-		const double& operator[](const int& i) const;
+		double& operator()(const int& i);
+		const double& operator()(const int& i) const;
 		double& operator()(const int& i, const int& j);
 		const double& operator()(const int& i, const int& j) const;
 		Matrix& operator=(const Matrix& other);
@@ -50,7 +50,6 @@ namespace simple_nn
 		friend Matrix operator+(double num, const Matrix& mat);
 		friend Matrix operator-(const Matrix& one, const Matrix& other);
 		friend Matrix operator-(const Matrix& mat, double num);
-		friend Matrix operator-(double num, const Matrix& mat);
 		friend Matrix operator*(const Matrix& one, const Matrix& other);
 		friend Matrix operator*(double num, const Matrix& mat);
 		friend Matrix operator*(const Matrix& mat, double num);
@@ -59,326 +58,308 @@ namespace simple_nn
 		friend Matrix operator/(double num, const Matrix& mat);
 		friend void operator+=(const Matrix& one, const Matrix& other);
 		friend void operator+=(const Matrix& mat, double num);
-		friend void operator-=(const Matrix& one, const Matrix& other);
-		friend void operator-=(const Matrix& mat, double num);
-		friend void operator*=(const Matrix& one, const Matrix& other);
-		friend void operator*=(const Matrix& mat, double num);
+		friend void operator/=(const Matrix & one, const Matrix& other);
 		friend void operator/=(const Matrix& mat, double num);
-
 		friend ostream& operator<<(ostream& out, const Matrix& mat);
 	};
 
-	typedef Matrix Vector;
+	Matrix::Matrix() : 
+		_data(nullptr), 
+		_row(0), 
+		_col(0), 
+		_size(0) {}
 
-	Matrix::Matrix() : mat(nullptr), row(0), col(0), _size(0) {}
+	Matrix::Matrix(int row) : 
+		_row(row),
+		_col(1), 
+		_size(row) { _data = new double[_size]; }
 
-	Matrix::Matrix(int row) : row(row), col(1), _size(row) { mat = new double[row]; }
+	Matrix::Matrix(int row, int col) : 
+		_row(row),
+		_col(col), 
+		_size(row* col) { _data = new double[_size]; }
 
-	Matrix::Matrix(int row, int col) : row(row), col(col), _size((__int64)row* col) { mat = new double[_size]; }
-
-	Matrix::Matrix(const Matrix& other) : row(other.row), col(other.col), _size((__int64)row* col)
+	Matrix::Matrix(const Matrix& other) : 
+		_row(other._row),
+		_col(other._col),
+		_size(other._size)
 	{
-		mat = new double[_size];
-		std::copy(other.mat, other.mat + other._size, mat);
+		_data = new double[_size];
+		std::copy(other._data, other._data + other._size, _data);
 	}
 
-	Matrix::~Matrix() { delete[] mat; }
+	Matrix::~Matrix() { delete[] _data; }
 
-	double* Matrix::begin() { return mat; }
+	double* Matrix::begin() { return _data; }
 
-	const double* Matrix::begin() const { return mat; }
+	const double* Matrix::begin() const { return _data; }
 
-	double* Matrix::end() { return mat + _size; }
+	double* Matrix::end() { return _data + _size; }
 
-	const double* Matrix::end() const { return mat + _size; }
+	const double* Matrix::end() const { return _data + _size; }
 
 	int Matrix::size() const { return _size; }
 
-	int Matrix::rows() const { return row; }
+	int Matrix::rows() const { return _row; }
 
-	int Matrix::cols() const { return col; }
+	int Matrix::cols() const { return _col; }
 
 	void Matrix::resize(int size)
 	{
-		if (_size != size)
-		{
-			delete[] mat;
-			mat = new double[size];
+		if (_size != size) {
+			delete[] _data;
+			_data = new double[size];
 			_size = size;
-			if (row == 0 && col == 0)
-			{
-				row = size;
-				col = 1;
+			if (_row == 0 && _col == 0) {
+				_row = size;
+				_col = 1;
 			}
-			else
-			{
-				row = (row == 1) ? 1 : size;
-				col = (col == 1) ? 1 : size;
+			else {
+				_row = (_row == 1) ? 1 : size;
+				_col = (_col == 1) ? 1 : size;
 			}
 		}
 	}
 
 	void Matrix::resize(int row, int col)
 	{
-		if (this->row != row || this->col != col)
-		{
+		if (_row != row || _col != col) {
 			_size = row * col;
-			delete[] mat;
-			mat = new double[_size];
-			this->row = row;
-			this->col = col;
+			delete[] _data;
+			_data = new double[_size];
+			_row = row;
+			_col = col;
 		}
 	}
 
-	void Matrix::setZero() { std::for_each(mat, mat + _size, [](double& elem) { elem = 0; }); }
+	void Matrix::setZero() { std::for_each(_data, _data + _size, [](double& elem) { elem = 0; }); }
 
-	double Matrix::max() const { return *std::max_element(mat, mat + _size); }
+	double Matrix::max() const { return *std::max_element(_data, _data + _size); }
 
-	double Matrix::sum() const { return accumulate(mat, mat + _size, 0.0); }
+	double Matrix::sum() const { return std::accumulate(_data, _data + _size, 0.0); }
 
-	double Matrix::mean() const { return std::accumulate(mat, mat + _size, 0.0) / _size; }
+	double Matrix::mean() const { return std::accumulate(_data, _data + _size, 0.0) / _size; }
 
 	double Matrix::var(double mean) const
 	{
-		double var = std::accumulate(mat, mat + _size, 0.0, [=](double sum, double x) {
+		double var = std::accumulate(_data, _data + _size, 0.0, [=](double sum, double x) {
 			return sum + (x - mean) * (x - mean);
 		});
 		return var / _size;
 	}
 
-	Matrix Matrix::element_wise(const Matrix& other) const
+	Matrix Matrix::pow(int num) const
 	{
-		if (row != other.row || col != other.col)
-		{
-			cout << "Matrix::element_wise(const Matrix&): Matrices are incompatible." << endl;
+		Matrix out(_row, _col);
+		std::transform(_data, _data + _size, out._data, [&](const double& elem) { return std::pow(elem, num); });
+		return out;
+	}
+
+	Matrix Matrix::sqrt() const
+	{
+		Matrix out(_row, _col);
+		std::transform(_data, _data + _size, out._data, [](const double& elem) { return std::sqrt(elem); });
+		return out;
+	}
+
+	Matrix Matrix::elem_wise_mult(const Matrix& other) const
+	{
+		if (_row != other._row || _col != other._col) {
+			cout << "Matrix::elem_wise_mult(const Matrix&): Matrices are incompatible." << endl;
 			exit(100);
 		}
-		Matrix out(row, col);
-		std::transform(mat, mat + _size, other.mat, out.mat, std::multiplies<double>());
+		Matrix out(_row, _col);
+		std::transform(_data, _data + _size, other._data, out._data, std::multiplies<double>());
 		return out;
 	}
 
 	Matrix Matrix::transpose() const
 	{
-		Matrix out(col, row);
-		if (row != 1 && col != 1)
-		{
-			for (int i = 0; i < row; i++)
-				for (int j = 0; j < col; j++)
-					out.mat[j * row + i] = mat[i * col + j];
+		Matrix out(_col, _row);
+		if (_row > 1 && _col > 1) {
+			for (int i = 0; i < _row; i++) {
+				for (int j = 0; j < _col; j++) {
+					out._data[i + j * _row] = _data[j + i * _col];
+				}
+			}
 		}
-		else
-		{
-			std::copy(mat, mat + _size, out.mat);
+		else {
+			std::copy(_data, _data + _size, out._data);
 		}
 		return out;
 	}
 
-	double& Matrix::operator[](const int& i) { return mat[i]; }
+	double& Matrix::operator()(const int& i) { return _data[i]; }
 
-	const double& Matrix::operator[](const int& i) const { return mat[i]; }
+	const double& Matrix::operator()(const int& i) const { return _data[i]; }
 
-	double& Matrix::operator()(const int& i, const int& j) { return mat[i * col + j]; }
+	double& Matrix::operator()(const int& i, const int& j) { return _data[i * _col + j]; }
 
-	const double& Matrix::operator()(const int& i, const int& j) const { return mat[i * col + j]; }
+	const double& Matrix::operator()(const int& i, const int& j) const { return _data[i * _col + j]; }
 
 	Matrix& Matrix::operator=(const Matrix& other)
 	{
-		resize(other.row, other.col);
+		resize(other._row, other._col);
 		_size = other._size;
-		std::copy(other.mat, other.mat + other._size, mat);
+		std::copy(other._data, other._data + other._size, _data);
 		return *this;
 	}
 
 	Matrix operator+(const Matrix& one, const Matrix& other)
 	{
-		if (one.row != other.row || one.col != other.col)
-		{
+		if (one._row != other._row || one._col != other._col) {
 			cout << "Matrix::operator+: Matrices are incompatible." << endl;
 			exit(100);
 		}
-		Matrix out(one.row, one.col);
-		transform(one.mat, one.mat + one._size, other.mat, out.mat, std::plus<double>());
+		Matrix out(one._row, one._col);
+		transform(one._data, one._data + one._size, other._data, out._data, std::plus<double>());
 		return out;
 	}
 
 	Matrix operator+(const Matrix& mat, double num)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::plus<double>(), num));
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind2nd(std::plus<double>(), num));
 		return out;
 	}
 
 	Matrix operator+(double num, const Matrix& mat)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::plus<double>(), num));
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind2nd(std::plus<double>(), num));
 		return out;
 	}
 
 	Matrix operator-(const Matrix& one, const Matrix& other)
 	{
-		if (one.row != other.row || one.col != other.col)
-		{
+		if (one._row != other._row || one._col != other._col) {
 			cout << "Matrix::operator-: Matrices are incompatible." << endl;
 			exit(100);
 		}
-		Matrix out(one.row, one.col);
-		transform(one.mat, one.mat + one._size, other.mat, out.mat, std::minus<double>());
+		Matrix out(one._row, one._col);
+		transform(one._data, one._data + one._size, other._data, out._data, std::minus<double>());
 		return out;
 	}
 
 	Matrix operator-(const Matrix& mat, double num)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::minus<double>(), num));
-		return out;
-	}
-
-	Matrix operator-(double num, const Matrix& mat)
-	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, [&num](const double& elem) {
-			return num - elem;
-		});
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind2nd(std::minus<double>(), num));
 		return out;
 	}
 
 	Matrix operator*(const Matrix& one, const Matrix& other)
 	{
-		if (one.col != other.row)
-		{
+		if (one._col != other._row) {
 			cout << "Matrix::opertor*: Matrices are incompatible." << endl;
 			exit(100);
 		}
-		else if (one.row == 1 && other.col == 1)
-		{
+		else if (one._row == 1 && other._col == 1) {
 			cout << "Matrix::operator*: Use dot() function." << endl;
 			exit(100);
 		}
-
-		Matrix out(one.row, other.col);
-
-		for (int i = 0; i < one.row; i++)
-			for (int j = 0; j < other.col; j++)
-			{
-				out.mat[i * other.col + j] = 0;
-				for (int k = 0; k < one.col; k++)
-					out.mat[i * other.col + j] += one.mat[i * one.col + k] * other.mat[k * other.col + j];
+		Matrix out(one._row, other._col);
+		out.setZero();
+		for (int i = 0; i < one._row; i++) {
+			for (int k = 0; k < one._col; k++) {
+				double temp = one._data[i * one._col + k];
+				for (int j = 0; j < other._col; j++) {
+					out._data[i * other._col + j] += temp * other._data[k * other._col + j];
+				}
 			}
-		
+		}
 		return out;
 	}
 
 	Matrix operator*(double num, const Matrix& mat)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::multiplies<double>(), num));
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind2nd(std::multiplies<double>(), num));
 		return out;
 	}
 
 	Matrix operator*(const Matrix& mat, double num)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::multiplies<double>(), num));
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind2nd(std::multiplies<double>(), num));
 		return out;
 	}
 
 	Matrix operator/(const Matrix& one, const Matrix& other)
 	{
-		if (one.row != other.row || one.col != other.col)
+		if (one._row != other._row || one._col != other._col)
 		{
 			cout << "Matrix::operator/: Matrices are incompatible." << endl;
 			exit(100);
 		}
-		Matrix out(one.row, one.col);
-		std::transform(one.mat, one.mat + one._size, other.mat, out.mat, std::divides<double>());
+		Matrix out(one._row, one._col);
+		std::transform(one._data, one._data + one._size, other._data, out._data, std::divides<double>());
 		return out;
 	}
 
 	Matrix operator/(const Matrix& mat, double num)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind2nd(std::divides<double>(), num));
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind2nd(std::divides<double>(), num));
 		return out;
 	}
 
 	Matrix operator/(double num, const Matrix& mat)
 	{
-		Matrix out(mat.row, mat.col);
-		std::transform(mat.mat, mat.mat + mat._size, out.mat, std::bind1st(std::divides<double>(), num));
+		Matrix out(mat._row, mat._col);
+		std::transform(mat._data, mat._data + mat._size, out._data, std::bind1st(std::divides<double>(), num));
 		return out;
 	}
 
 	void operator+=(const Matrix& one, const Matrix& other)
 	{
-		if (one.row != other.row || one.col != other.col)
+		if (one._row != other._row || one._col != other._col)
 		{
 			cout << "Matrix::operator+=: Matrices are incompatible." << endl;
 			exit(100);
 		}
-		std::transform(one.mat, one.mat + one._size, other.mat, one.mat, std::plus<double>());
+		std::transform(one._data, one._data + one._size, other._data, one._data, std::plus<double>());
 	}
 
 	void operator+=(const Matrix& mat, double num)
 	{
-		std::for_each(mat.mat, mat.mat + mat._size, [&](double& elem) { elem += num; });
+		std::for_each(mat._data, mat._data + mat._size, [&](double& elem) { elem += num; });
 	}
 
-	void operator-=(const Matrix& one, const Matrix& other)
+	void operator/=(const Matrix& one, const Matrix& other)
 	{
-		if (one.row != other.row || one.col != other.col)
+		if (one._row != other._row || one._col != other._col)
 		{
-			cout << "Matrix::operator-=: Matrices are incompatible." << endl;
+			cout << "Matrix::operator+=: Matrices are incompatible." << endl;
 			exit(100);
 		}
-		std::transform(one.mat, one.mat + one._size, other.mat, one.mat, std::minus<double>());
-	}
-
-	void operator-=(const Matrix& mat, double num)
-	{
-		std::for_each(mat.mat, mat.mat + mat._size, [&](double& elem) { elem -= num; });
-	}
-
-	void operator*=(const Matrix& one, const Matrix& other)
-	{
-		if (one.row != other.row || one.col != other.col)
-		{
-			cout << "Matrix::operator*=: Matrices are incompatible." << endl;
-			exit(100);
-		}
-		std::transform(one.mat, one.mat + one._size, other.mat, one.mat, std::multiplies<double>());
-	}
-
-	void operator*=(const Matrix& mat, double num)
-	{
-		std::for_each(mat.mat, mat.mat + mat._size, [&](double& elem) { elem *= num; });
+		std::transform(one._data, one._data + one._size, other._data, one._data, std::divides<double>());
 	}
 
 	void operator/=(const Matrix& mat, double num)
 	{
-		std::for_each(mat.mat, mat.mat + mat._size, [&](double& elem) { elem /= num; });
+		std::for_each(mat._data, mat._data + mat._size, [&](double& elem) { elem /= num; });
 	}
 
 	ostream& operator<<(ostream& out, const Matrix& mat)
 	{
-		if (mat.row == 1)
+		if (mat._row == 1)
 		{
 			for (int i = 0; i < mat._size; i++)
-				cout << std::setw(8) << mat.mat[i];
+				cout << std::setw(8) << mat._data[i];
 			cout << endl;
 		}
-		else if (mat.col == 1)
+		else if (mat._col == 1)
 		{
 			for (int i = 0; i < mat._size; i++)
-				cout << std::setw(8) << mat.mat[i] << endl;
+				cout << std::setw(8) << mat._data[i] << endl;
 		}
 		else
 		{
-			for (int i = 0; i < mat.row; i++)
+			for (int i = 0; i < mat._row; i++)
 			{
-				for (int j = 0; j < mat.col; j++)
-					cout << std::setw(8) << mat.mat[i * mat.col + j];
+				for (int j = 0; j < mat._col; j++)
+					cout << std::setw(8) << mat._data[i * mat._col + j];
 				cout << endl;
 			}
 		}
