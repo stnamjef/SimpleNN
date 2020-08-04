@@ -5,150 +5,172 @@ namespace simple_nn
 {
 	class Activation : public Layer
 	{
-	private:
+	public:
 		int batch_size;
 		int channels;
-		Activate opt;
+		int in_h;
+		int in_w;
+		string activate_opt;
+		bool is2d;
 	public:
-		Activation(int channels, Activate opt) :
-			Layer(LayerType::ACTIVATION),
-			batch_size(0),
-			opt(opt),
-			channels(channels) {}
-
-		~Activation() {}
-
-		void set_batch(int batch_size) override;
-
-		void forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction) override;
-
-		vector<vector<Matrix>> backward_propagate(const vector<vector<Matrix>>& prev_out, bool isFirst) override;
+		Activation(string opt);
+		void set_layer(int batch_size, const vector<int>& input_shape) override;
+		void reset_batch(int batch_size);
+		void forward_propagate(const Tensor& prev_out, bool isPrediction) override;
+		void backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst) override;
+		vector<int> output_shape() override;
+	private:
+		void tanh(const Tensor& prev_out);
+		void relu(const Tensor& prev_out);
+		void softmax(const Tensor& prev_out);
+		void calc_prev_delta_tanh(const Tensor& prev_out, Tensor& prev_delta) const;
+		void calc_prev_delta_relu(const Tensor& prev_out, Tensor& prev_delta) const;
+		void calc_prev_delta_softmax(Tensor& prev_delta) const;
 	};
 
-	Matrix activate(const Matrix& sum, Activate opt);
+	Activation::Activation(string opt) :
+		Layer("activation"),
+		batch_size(0),
+		channels(0),
+		in_h(0),
+		in_w(0),
+		activate_opt(opt),
+		is2d(false) {}
 
-	Matrix tanh(const Matrix& sum);
-
-	Matrix relu(const Matrix& sum);
-
-	Vector softmax(const Vector& sum);
-
-	double sum_exp(const Vector& sum, double max);
-
-	Matrix activate_prime(const Matrix& sum, Activate opt);
-
-	Matrix tanh_prime(const Matrix& sum);
-
-	Matrix relu_prime(const Matrix& sum);
-
-	//------------------------------- function definition -------------------------------
-
-	void Activation::set_batch(int batch_size)
+	void Activation::set_layer(int batch_size, const vector<int>& input_shape)
 	{
 		this->batch_size = batch_size;
-		output.resize(batch_size, vector<Matrix>(channels));
-		delta.resize(batch_size, vector<Matrix>(channels));
+		if (input_shape.size() == 3) {
+			channels = input_shape[2];
+			in_h = input_shape[0];
+			in_w = input_shape[1];
+			is2d = true;
+			output.resize(batch_size, channels, in_h, in_w);
+			delta.resize(batch_size, channels, in_h, in_w);
+		}
+		else {
+			channels = 1;
+			in_h = input_shape[0];
+			in_w = 1;
+			is2d = false;
+			output.resize(batch_size, channels, in_h);
+			delta.resize(batch_size, channels, in_h);
+		}
 	}
 
-	void Activation::forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction)
+	void Activation::reset_batch(int batch_size)
 	{
-		for (int n = 0; n < batch_size; n++)
-			for (int ch = 0; ch < channels; ch++)
-				output[n][ch] = activate(prev_out[n][ch], opt);
+		this->batch_size = batch_size;
+		if (is2d) {
+			output.resize(batch_size, channels, in_h, in_w);
+		}
+		else {
+			output.resize(batch_size, channels, in_h);
+		}
 	}
 
-	Matrix activate(const Matrix& sum, Activate opt)
+	void Activation::forward_propagate(const Tensor& prev_out, bool isPrediction)
 	{
-		if (opt == Activate::TANH)
-			return tanh(sum);
-		else if (opt == Activate::RELU)
-			return relu(sum);
-		else
-			return softmax(sum);
+		if (activate_opt == "tanh") {
+			tanh(prev_out);
+		}
+		else if (activate_opt == "relu") {
+			relu(prev_out);
+		}
+		else {
+			softmax(prev_out);
+		}
 	}
 
-	Matrix tanh(const Matrix& sum)
+	void Activation::tanh(const Tensor& prev_out)
 	{
-		Matrix out(sum.rows(), sum.cols());
-		transform(sum.begin(), sum.end(), out.begin(), [](const double& elem) {
-			return 2 / (1 + std::exp(-elem)) - 1;
-		});
-		return out;
+		for (int n = 0; n < batch_size; n++) {
+			for (int c = 0; c < channels; c++) {
+				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), output[n][c].begin(),
+					[](const double& elem) {
+					return 2 / (1 + std::exp(-elem)) - 1;
+				});
+			}
+		}
 	}
 
-	Matrix relu(const Matrix& sum)
+	void Activation::relu(const Tensor& prev_out)
 	{
-		Matrix out(sum.rows(), sum.cols());
-		std::transform(sum.begin(), sum.end(), out.begin(), [](const double& elem) {
-			return std::max(0.0, elem);
-		});
-		return out;
+		for (int n = 0; n < batch_size; n++) {
+			for (int c = 0; c < channels; c++) {
+				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), output[n][c].begin(),
+					[](const double& elem) {
+					return std::max(0.0, elem);
+				});
+			}
+		}
 	}
 
-	Vector softmax(const Vector& sum)
+	void Activation::softmax(const Tensor& prev_out)
 	{
-		if (sum.rows() > 1 && sum.cols() > 1)
-		{
+		if (in_h > 1 && in_w > 1) {
 			cout << "softmax(const Vector&): Not a matrix function." << endl;
 			exit(100);
 		}
-		Vector out(sum.size());
-		double max = sum.max();
-		double exps = sum_exp(sum, max);
-		std::transform(sum.begin(), sum.end(), out.begin(), [&](const double& elem) {
-			return exp(elem + max) / exps;
-		});
-		return out;
-	}
-
-	double sum_exp(const Vector& sum, double max)
-	{
-		double out = std::accumulate(sum.begin(), sum.end(), 0.0, [&](const double& sum, const double& elem) {
-			return sum + exp(elem + max);
-		});
-		return out;
-	}
-
-	vector<vector<Matrix>> Activation::backward_propagate(const vector<vector<Matrix>>& prev_out, bool isFirst)
-	{
-		if (opt != Activate::SOFTMAX)
-		{
-			for (int n = 0; n < batch_size; n++)
-				for (int ch = 0; ch < channels; ch++)
-					delta[n][ch] *= activate_prime(prev_out[n][ch], opt);
-		}
-		return delta;
-	}
-
-	Matrix activate_prime(const Matrix& sum, Activate opt)
-	{
-		if (opt == Activate::TANH)
-			return tanh_prime(sum);
-		else if (opt == Activate::RELU)
-			return relu_prime(sum);
-		else
-		{
-			cout << "activate_prime(const Matrix&, Activate): Invalid argument." << endl;
-			exit(100);
+		for (int n = 0; n < batch_size; n++) {
+			for (int c = 0; c < channels; c++) {
+				double max = prev_out[n][c].max();
+				double sum_exp_ = sum_exp(prev_out[n][c], max);
+				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), output[n][c].begin(),
+					[&](const double& elem) {
+					return std::exp(elem + max) / sum_exp_;
+				});
+			}
 		}
 	}
 
-	Matrix tanh_prime(const Matrix& sum)
+	void Activation::backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst)
 	{
-		Matrix out(sum.rows(), sum.cols());
-		std::transform(sum.begin(), sum.end(), out.begin(), [](const double& elem) {
-			double tanh = 2 / (1 + std::exp(-elem)) - 1;
-			return 0.5 * (1 - pow(tanh, 2));
-		});
-		return out;
+		if (activate_opt == "tanh") {
+			calc_prev_delta_tanh(prev_out, prev_delta);
+		}
+		else if (activate_opt == "relu") {
+			calc_prev_delta_relu(prev_out, prev_delta);
+		}
+		else {
+			calc_prev_delta_softmax(prev_delta);
+		}
 	}
 
-	Matrix relu_prime(const Matrix& sum)
+	void Activation::calc_prev_delta_tanh(const Tensor& prev_out, Tensor& prev_delta) const
 	{
-		Matrix out(sum.rows(), sum.cols());
-		std::transform(sum.begin(), sum.end(), out.begin(), [](const double& elem) {
-			return (elem < 0) ? 0 : 1;
-		});
-		return out;
+		for (int n = 0; n < batch_size; n++) {
+			for (int c = 0; c < channels; c++) {
+				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), delta[n][c].begin(), prev_delta[n][c].begin(),
+					[](const double& elem1, const double& elem2) {
+					double tanh = 2 / (1 + std::exp(-elem1)) - 1;
+					return elem2 * 0.5 * (1 - tanh * tanh);
+				});
+			}
+		}
+	}
+
+	void Activation::calc_prev_delta_relu(const Tensor& prev_out, Tensor& prev_delta) const
+	{
+		for (int n = 0; n < batch_size; n++) {
+			for (int c = 0; c < channels; c++) {
+				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), delta[n][c].begin(), prev_delta[n][c].begin(),
+					[](const double& elem1, const double& elem2) {
+					return elem1 < 0 ? 0 : elem2;
+				});
+			}
+		}
+	}
+
+	void Activation::calc_prev_delta_softmax(Tensor& prev_delta) const { prev_delta = delta; }
+
+	vector<int> Activation::output_shape()
+	{
+		if (is2d) {
+			return { in_h, in_w, channels };
+		}
+		else {
+			return { in_h };
+		}
 	}
 }
