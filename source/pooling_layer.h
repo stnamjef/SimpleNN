@@ -9,135 +9,159 @@ namespace simple_nn
 		int batch_size;
 		int in_channels;
 		int out_channels;
-		int in_size;
-		int filt_size;
-		int out_size;
+		int in_h;
+		int in_w;
+		int kernel_h;
+		int kernel_w;
+		int out_h;
+		int out_w;
 		int stride;
-		Pool pool_opt;
+		string pool_opt;
 	public:
-		Pool2D(const vector<int>& input_size,
-			const vector<int>& filter_size,
-			int stride,
-			Pool pool_opt = Pool::MAX);
-
-		~Pool2D() {}
-
-		void set_batch(int batch_size) override;
-
-		void forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction) override;
-
-		vector<vector<Matrix>> backward_propagate(const vector<vector<Matrix>>& prev_out, bool isFirst) override;
+		Pool2D(const vector<int>& kernel_size, int stride, string pool_opt = "max");
+		void set_layer(int batch_size, const vector<int>& input_shape) override;
+		void reset_batch(int batch_size) override;
+		void forward_propagate(const Tensor& prev_out, bool isPrediction) override;
+		void backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst) override;
+		vector<int> output_shape() override;
 	};
 
-	Matrix pool2d(const Matrix& img, int filt, int stride, Pool opt);
+	Pool2D::Pool2D(const vector<int>& kernel_size,
+		int stride,
+		string pool_opt) :
+		Layer("pool2d"),
+		batch_size(0),
+		in_channels(0),
+		out_channels(0),
+		in_h(0),
+		in_w(0),
+		kernel_h(kernel_size[0]),
+		kernel_w(kernel_size[1]),
+		out_h(0),
+		out_w(0),
+		stride(stride),
+		pool_opt(pool_opt) {}
 
-	Matrix delta_img(const Matrix& img, const Matrix& delta, int filt, int stride, Pool opt);
-
-	//------------------------------- function definition -------------------------------
-
-	Pool2D::Pool2D(const vector<int>& input_size,
-				   const vector<int>& filter_size,
-				   int stride,
-				   Pool pool_opt) :
-				   Layer(LayerType::POOL2D),
-				   batch_size(0),
-				   in_channels(input_size[2]),
-				   out_channels(filter_size[2]),
-				   in_size(input_size[0]),
-				   filt_size(filter_size[0]),
-				   out_size(calc_outsize(in_size, filt_size, stride, 0)),
-				   stride(stride),
-				   pool_opt(pool_opt)
+	void Pool2D::set_layer(int batch_size, const vector<int>& input_shape)
 	{
-		if (in_channels != out_channels)
-		{
-			cout << "Pool2D::Pool2D(): Invalid channel size." << endl;
-			exit(100);
+		this->batch_size = batch_size;
+		in_channels = input_shape[2];
+		out_channels = input_shape[2];
+		in_h = input_shape[0];
+		in_w = input_shape[1];
+		out_h = calc_outsize(in_h, kernel_h, stride, 0);
+		out_w = calc_outsize(in_w, kernel_w, stride, 0);
+
+		output.resize(batch_size, out_channels, out_h, out_w);
+		delta.resize(batch_size, out_channels, out_h, out_w);
+	}
+
+	void Pool2D::reset_batch(int batch_size)
+	{
+		this->batch_size = batch_size;
+		output.resize(batch_size, out_channels, out_h, out_w);
+	}
+
+	void Pool2D::forward_propagate(const Tensor& prev_out, bool isPrediction)
+	{
+		if (pool_opt == "max") {
+			for (int n = 0; n < batch_size; n++) {
+				for (int c = 0; c < in_channels; c++) {
+					for (int i = 0; i < out_h; i++) {
+						for (int j = 0; j < out_w; j++) {
+							Vector temp(kernel_h * kernel_w);
+							for (int x = 0; x < kernel_h; x++) {
+								for (int y = 0; y < kernel_w; y++) {
+									int ii = i + x + (stride - 1) * i;
+									int jj = j + y + (stride - 1) * j;
+									if (ii >= 0 && ii < in_h &&
+										jj >= 0 && jj < in_w) {
+										temp(x * kernel_w + y) = prev_out[n][c](ii, jj);
+									}
+								}
+							}
+							output[n][c](i, j) = temp.max();
+						}
+					}
+				}
+			}
+		}
+		else {
+			for (int n = 0; n < batch_size; n++) {
+				for (int c = 0; c < in_channels; c++) {
+					for (int i = 0; i < out_h; i++) {
+						for (int j = 0; j < out_w; j++) {
+							double sum = 0.0;
+							for (int x = 0; x < kernel_h; x++) {
+								for (int y = 0; y < kernel_w; y++) {
+									int ii = i + x + (stride - 1) * i;
+									int jj = j + y + (stride - 1) * j;
+									if (ii >= 0 && ii < in_h &&
+										jj >= 0 && jj < in_w) {
+										sum += prev_out[n][c](ii, jj);
+									}
+								}
+							}
+							output[n][c](i, j) = sum / (kernel_h * kernel_w);
+						}
+					}
+				}
+			}
 		}
 	}
 
-	void Pool2D::set_batch(int batch_size)
+	void Pool2D::backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst)
 	{
-		this->batch_size = batch_size;
-		output.resize(batch_size, vector<Matrix>(out_channels, Matrix(out_size, out_size)));
-		delta.resize(batch_size, vector<Matrix>(out_channels, Matrix(out_size, out_size)));
-	}
-
-	void Pool2D::forward_propagate(const vector<vector<Matrix>>& prev_out, bool isPrediction)
-	{
-		for (int n = 0; n < batch_size; n++)
-			for (int ch = 0; ch < out_channels; ch++)
-				output[n][ch] = pool2d(prev_out[n][ch], filt_size, stride, pool_opt);
-	}
-
-	Matrix pool2d(const Matrix& img, int filt, int stride, Pool opt)
-	{
-		int out = calc_outsize(img.rows(), filt, stride, 0);
-		Matrix output(out, out);
-		for (int i = 0; i < out; i++)
-			for (int j = 0; j < out; j++)
-			{
-				vector<double> temp((__int64)filt * filt);
-				for (int x = 0; x < filt; x++)
-					for (int y = 0; y < filt; y++)
-					{
-						int ii = i + x + (stride - 1) * i;
-						int jj = j + y + (stride - 1) * j;
-
-						if (ii >= 0 && ii < img.rows() && jj >= 0 && jj < img.cols())
-							temp[x * filt + y] = img(ii, jj);
-					}
-				if (opt == Pool::MAX)
-					output(i, j) = *std::max_element(temp.begin(), temp.end());
-				else
-					output(i, j) = std::accumulate(temp.begin(), temp.end(), 0.0) / (double)temp.size();
-			}
-		return output;
-	}
-
-	vector<vector<Matrix>> Pool2D::backward_propagate(const vector<vector<Matrix>>& prev_out, bool isFirst)
-	{
-		vector<vector<Matrix>> prev_delta(batch_size, vector<Matrix>(in_channels));
-
-		for (int n = 0; n < batch_size; n++)
-			for (int ch = 0; ch < in_channels; ch++)
-				prev_delta[n][ch] = delta_img(prev_out[n][ch], delta[n][ch], filt_size, stride, pool_opt);
-
-		return prev_delta;
-	}
-
-	Matrix delta_img(const Matrix& img, const Matrix& delta, int filt, int stride, Pool opt)
-	{
-		Matrix output(img.rows(), img.cols());
-		output.setZero();
-
-		int out = calc_outsize(img.rows(), filt, stride, 0);
-		for (int i = 0; i < out; i++)
-			for (int j = 0; j < out; j++)
-			{
-				vector<double> temp;
-				for (int x = 0; x < filt; x++)
-					for (int y = 0; y < filt; y++)
-					{
-						int ii = i + x + (stride - 1) * i;
-						int jj = j + y + (stride - 1) * j;
-
-						if (ii >= 0 && ii < img.rows() && jj >= 0 && jj < img.cols())
-						{
-							if (opt == Pool::MAX)
-								temp.push_back(img(ii, jj));
-							else
-								output(ii, jj) = delta(i, j) / pow((double)filt, 2);
+		if (pool_opt == "MAX") {
+			for (int n = 0; n < batch_size; n++) {
+				for (int c = 0; c < in_channels; c++) {
+					prev_delta[n][c].setZero();
+					for (int i = 0; i < out_h; i++) {
+						for (int j = 0; j < out_w; j++) {
+							double max = DOUBLE_MIN;
+							int max_i = -1;
+							int max_j = -1;
+							for (int x = 0; x < kernel_h; x++) {
+								for (int y = 0; y < kernel_w; y++) {
+									int ii = i + x + (stride - 1) * i;
+									int jj = j + y + (stride - 1) * j;
+									if (ii >= 0 && ii < in_h &&
+										jj >= 0 && jj < in_w &&
+										max < prev_out[n][c](ii, jj)) {
+										max = prev_out[n][c](ii, jj);
+										max_i = ii;
+										max_j = jj;
+									}
+								}
+							}
+							prev_delta[n][c](max_i, max_j) = delta[n][c](i, j);
 						}
 					}
-				if (opt == Pool::MAX)
-				{
-					int max = (int)std::distance(temp.begin(), std::max_element(temp.begin(), temp.end()));
-					int ii = i + (max / filt) + (stride - 1) * i;
-					int jj = j + (max % filt) + (stride - 1) * j;
-					output(ii, jj) = delta(i, j);
 				}
 			}
-		return output;
+		}
+		else {
+			double denominator = (double)kernel_h * kernel_w;
+			for (int n = 0; n < batch_size; n++) {
+				for (int c = 0; c < in_channels; c++) {
+					for (int i = 0; i < out_h; i++) {
+						for (int j = 0; j < out_w; j++) {
+							for (int x = 0; x < kernel_h; x++) {
+								for (int y = 0; y < kernel_w; y++) {
+									int ii = i + x + (stride - 1) * i;
+									int jj = j + y + (stride - 1) * j;
+									if (ii >= 0 && ii < in_h &&
+										jj >= 0 && jj < in_w) {
+										prev_delta[n][c](ii, jj) = delta[n][c](i, j) / denominator;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
+
+	vector<int> Pool2D::output_shape() { return { out_h, out_w, out_channels }; }
 }
