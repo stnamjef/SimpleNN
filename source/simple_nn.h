@@ -1,10 +1,11 @@
 #pragma once
-#include "file_manage.h"
-#include "dense_layer.h"
+#include <time.h>
 #include "convolutional_layer.h"
 #include "pooling_layer.h"
+#include "dense_layer.h"
 #include "activation_layer.h"
 #include "output_layer.h"
+#include "flatten_layer.h"
 #include "batch_normalization_layer.h"
 
 namespace simple_nn
@@ -12,205 +13,242 @@ namespace simple_nn
 	class SimpleNN
 	{
 	private:
+		int n_batch;
+		int batch_size;
+		int in_channels;
+		int in_h;
+		int in_w;
 		vector<Layer*> net;
+		vector<vector<int>> batch_indices;
+		Tensor batch_X;
+		Tensor batch_Y;
 	public:
-		SimpleNN() {}
-		~SimpleNN() {}
+		SimpleNN();
 		void add(Layer* layer);
-		void fit(const vector<Matrix>& X,
+		void fit(const Tensor& X,
 			const Vector& Y,
 			double l_rate,
 			int n_epoch,
 			int batch_size,
 			double lambda,
-			const vector<Matrix>& test_X,
-			const Vector& test_Y);
-		Vector predict(const vector<Matrix>& X, const Vector& Y, double& loss);
+			const Tensor& test_X = {},
+			const Vector& test_Y = {});
+		Vector predict(const Tensor& X);
+	private:
+		void set_network(int n_batch, int batch_size);
+		void generate_batch_indices();
+		void get_batch(const Tensor& X, const vector<int>& batch_idx);
+		void get_batch(const Vector& Y, const vector<int>& batch_idx);
+		void forward_propagate(const Tensor& X, bool isPrediction = false);
+		void backward_propagate(const Tensor& X, const Tensor& Y);
+		void update_weight(double l_rate, double lambda);
+		void reset_batch(int new_batch_size);
+		void print_loss_error(const Vector& expected, const Vector& predicted, bool isTraining);
 	};
+	void print_progress(int epoch, int n_epoch, int count);
 
-	vector<vector<int>> split_into_batches(int batch_size, int n_batch);
-
-	vector<vector<Matrix>> get_batch(const vector<Matrix>& X, vector<int>& batch_idx);
-
-	vector<vector<Vector>> get_batch(const Vector& Y, vector<int>& batch_idx);
-
-	void set_batch(const vector<Layer*>& net, int batch_size);
-
-	void forward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, int batch_size, bool isPrediction = false);
-
-	void backward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, const vector<vector<Vector>>& Y, int batch_size);
-
-	void update_weight(const vector<Layer*>& net, double l_rate, double lambda);
-
-	//---------------------------------------------- function definition ----------------------------------------------
+	SimpleNN::SimpleNN() :
+		n_batch(0),
+		batch_size(0),
+		in_channels(0),
+		in_h(0),
+		in_w(0) {}
 
 	void SimpleNN::add(Layer* layer) { net.push_back(layer); }
 
-	void SimpleNN::fit(const vector<Matrix>& X,
-					   const Vector& Y,
-					   double l_rate,
-					   int n_epoch,
-					   int batch_size,
-					   double lambda,
-					   const vector<Matrix>& test_X,
-					   const Vector& test_Y)
+	void SimpleNN::fit(const Tensor& X,
+		const Vector& Y,
+		double l_rate,
+		int n_epoch,
+		int batch_size,
+		double lambda,
+		const Tensor& test_X,
+		const Vector& test_Y)
 	{
-		int n_batch = (int)X.size() / batch_size;
-		vector<vector<int>> batches = split_into_batches(batch_size, n_batch);
-
-		for (int epoch = 0; epoch < n_epoch; epoch++)
-		{
-			set_batch(net, batch_size);
-
-			double train_loss = 0.0, test_loss = 0.0;
-			double train_error = 0.0, test_error = 0.0;
-
-			for (int n = 0; n < n_batch; n++)
-			{
-				forward_propagate(net, get_batch(X, batches[n]), batch_size);
-				backward_propagate(net, get_batch(X, batches[n]), get_batch(Y, batches[n]), batch_size);
-				update_weight(net, l_rate, lambda);
+		set_network(X.batches() / batch_size, batch_size);
+		for (int epoch = 0; epoch < n_epoch; epoch++) {
+			int count = 0;
+			int range = n_batch / 30;
+			clock_t start = clock();
+			for (int n = 0; n < n_batch; n++) {
+				get_batch(X, batch_indices[n]);
+				get_batch(Y, batch_indices[n]);
+				forward_propagate(batch_X);
+				backward_propagate(batch_X, batch_Y);
+				update_weight(l_rate, lambda);
+				if ((n % range == 0 || n == n_batch - 1) && count <= 30) {
+					print_progress(epoch, n_epoch, count);
+					count++;
+				}
 			}
-
-			train_error = calc_error(Y, predict(X, Y, train_loss));
-			test_error = calc_error(test_Y, predict(test_X, test_Y, test_loss));
-
-			cout << "Epoch" << epoch + 1;
-			cout << " : training loss -> " << train_loss;
-			cout << ", testing loss -> " << test_loss;
-			cout << ", training error -> " << train_error * 100 << "%";
-			cout << ", testing error -> " << test_error * 100 << "%" << endl;
+			cout << " - t: " << (double)(clock() - start) / CLOCKS_PER_SEC;
+			reset_batch(X.batches());
+			print_loss_error(Y, predict(X), true);
+			reset_batch(test_X.batches());
+			print_loss_error(test_Y, predict(test_X), false);
+			reset_batch(batch_size);
 		}
 	}
 
-	vector<vector<int>> split_into_batches(int batch_size, int n_batch)
+	void SimpleNN::set_network(int n_batch, int batch_size)
+	{
+		vector<int>in_shape = net.front()->input_shape();
+		this->n_batch = n_batch;
+		this->batch_size = batch_size;
+		if (in_shape.size() == 3) {
+			in_h = in_shape[0];
+			in_w = in_shape[1];
+			in_channels = in_shape[2];
+		}
+		else {
+			in_h = in_shape[0];
+			in_w = 1;
+			in_channels = 1;
+		}
+		batch_X.resize(batch_size, in_channels, in_h, in_w);
+		batch_Y.resize(batch_size, 1, 1);
+		generate_batch_indices();
+
+		for (int l = 0; l < net.size(); l++) {
+			if (l == 0) {
+				net[l]->set_layer(batch_size, in_shape);
+			}
+			else {
+				net[l]->set_layer(batch_size, net[l - 1]->output_shape());
+			}
+		}
+	}
+
+	void SimpleNN::generate_batch_indices()
 	{
 		vector<int> ranNum((__int64)n_batch * batch_size);
-		for (int i = 0; i < ranNum.size(); i++)
+		for (int i = 0; i < ranNum.size(); i++) {
 			ranNum[i] = i;
+		}
 
 		/*unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
 		std::shuffle(ranNum.begin(), ranNum.end(), std::default_random_engine(seed));*/
 
-		vector<vector<int>> batches(n_batch, vector<int>(batch_size));
-		for (int i = 0; i < n_batch; i++)
-			for (int j = 0; j < batch_size; j++)
-				batches[i][j] = ranNum[(__int64)i * batch_size + j];
-
-		return batches;
-	}
-
-	vector<vector<Matrix>> get_batch(const vector<Matrix>& X, vector<int>& batch_idx)
-		// an input img has only one channel
-	{
-		vector<vector<Matrix>> batch(batch_idx.size(), vector<Matrix>(1));
-		for (unsigned int i = 0; i < batch_idx.size(); i++)
-			batch[i][0] = X[batch_idx[i]]; 
-		return batch;
-	}
-
-	vector<vector<Vector>> get_batch(const Vector& Y, vector<int>& batch_idx)
-		// 첫 번째 batch의 첫 번째 channel에 모든 데이터가 다 있음
-	{
-		vector<vector<Vector>> batch(1, vector<Vector>(1, Vector((int)batch_idx.size())));
-		for (unsigned int i = 0; i < batch_idx.size(); i++)
-			batch[0][0][i] = Y[batch_idx[i]];
-		return batch;
-	}
-
-	void set_batch(const vector<Layer*>& net, int batch_size)
-	{
-		for (const auto& layer : net)
-			layer->set_batch(batch_size);
-	}
-
-	void forward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, int batch_size, bool isPrediction)
-	{
-		for (unsigned int l = 0; l < net.size(); l++)
-		{
-			Layer* curr = net[l];
-			Layer* prev = (l == 0) ? nullptr : net[l - 1];
-
-			if (l == 0)
-			{
-				curr->forward_propagate(X, isPrediction);
-			}
-			else if (prev->type == LayerType::POOL2D &&
-					 curr->type == LayerType::DENSE)
-			{
-				curr->forward_propagate(flatten(prev->output, batch_size), isPrediction);
-			}
-			else
-			{
-				curr->forward_propagate(prev->output, isPrediction);
+		batch_indices.resize(n_batch, vector<int>(batch_size));
+		for (int i = 0; i < n_batch; i++) {
+			for (int j = 0; j < batch_size; j++) {
+				batch_indices[i][j] = ranNum[(__int64)i * batch_size + j];
 			}
 		}
 	}
 
-	void backward_propagate(const vector<Layer*>& net, const vector<vector<Matrix>>& X, const vector<vector<Vector>>& Y, int batch_size)
+	void SimpleNN::get_batch(const Tensor& X, const vector<int>& batch_idx)
+	{
+		for (int n = 0; n < batch_size; n++) {
+			for (int c = 0; c < in_channels; c++) {
+				batch_X[n][c] = X[batch_idx[n]][c];
+			}
+		}
+	}
+
+	void SimpleNN::get_batch(const Vector& Y, const vector<int>& batch_idx)
+	{
+		for (int n = 0; n < batch_size; n++) {
+			batch_Y[n][0](0) = Y(batch_idx[n]);
+		}
+	}
+
+	void SimpleNN::forward_propagate(const Tensor& X, bool isPrediction)
+	{
+		for (int l = 0; l < net.size(); l++)
+		{
+			if (l == 0) {
+				net[l]->forward_propagate(X, isPrediction);
+			}
+			else {
+				net[l]->forward_propagate(net[l - 1]->output, isPrediction);
+			}
+		}
+	}
+
+	void SimpleNN::backward_propagate(const Tensor& X, const Tensor& Y)
 	{
 		for (int l = (int)net.size() - 1; l >= 0; l--)
 		{
-			Layer* curr = net[l];
-			Layer* prev = (l == 0) ? nullptr : net[l - 1];
-
-			if (l == (int)net.size() - 1)
-			{
-				prev->delta = curr->backward_propagate(Y);
+			if (l == (int)net.size() - 1) {
+				net[l]->backward_propagate(Y, net[l - 1]->delta);
 			}
-			else if (l == 0)
-			{
-				curr->backward_propagate(X, true);
+			else if (l == 0) {
+				Tensor empty;
+				net[l]->backward_propagate(X, empty, true);
 			}
-			else if (curr->type == LayerType::DENSE &&
-					 prev->type == LayerType::POOL2D)
-			{
-				const vector<vector<Vector>>& delta = curr->backward_propagate(flatten(prev->output, batch_size));
-				int prev_out_channels = (int)prev->output.at(0).size();
-				int prev_out_size = (int)prev->output.at(0).at(0).rows();
-				prev->delta = unflatten(delta, prev_out_channels, prev_out_size);
-			}
-			else
-			{
-				prev->delta = curr->backward_propagate(prev->output);
+			else {
+				net[l]->backward_propagate(net[l - 1]->output, net[l - 1]->delta);
 			}
 		}
 	}
 
-	void update_weight(const vector<Layer*>& net, double l_rate, double lambda)
+	void SimpleNN::update_weight(double l_rate, double lambda)
 	{
-		for (const auto& layer : net)
-		{
-			if (layer->type != LayerType::POOL2D &&
-				layer->type != LayerType::ACTIVATION &&
-				layer->type != LayerType::OUTPUT)
-			{
+		for (const auto& layer : net) {
+			if (layer->type == "conv2d" ||
+				layer->type == "dense" ||
+				layer->type == "batchnorm") {
 				layer->update_weight(l_rate, lambda);
 			}
 		}
 	}
 
-	Vector SimpleNN::predict(const vector<Matrix>& X, const Vector& Y, double& loss)
+	void print_progress(int epoch, int n_epoch, int count)
 	{
-		int n_data = (int)X.size();
-		set_batch(net, 1);
-
-		Vector predicts(n_data);
-		for (int i = 0; i < n_data; i++)
-		{
-			vector<vector<Matrix>> temp(1, vector<Matrix>(1, X[i]));
-			forward_propagate(net, temp, 1, true);
-			
-			const Vector& output = net.back()->output[0][0];
-			predicts[i] = max_idx(output);
-
-			if (net.back()->get_loss_opt() == Loss::MSE)
-				loss += 0.5 * pow2d(as_vector((int)Y[i], 10) - output).sum();
-			else
-				loss += -log(softmax(output)[(int)Y[i]]);
+		int bar_length = 30;
+		string bar = "";
+		for (int i = 0; i < count; i++) {
+			bar.push_back('=');
 		}
-		loss /= (double)X.size();
+		cout << "Epoch " << epoch + 1 << "/" << n_epoch << "  ";
+		cout << "[" << std::setw(bar_length) << std::left << bar << "] - ";
+		cout << fixed << setprecision(2) << setw(4) << std::right;
+		cout << count / (double)bar_length * 100 << "%";
+		if (count < bar_length) {
+			cout << '\r';
+		}
+	}
 
-		return predicts;
+	void SimpleNN::reset_batch(int new_batch_size)
+	{
+		batch_size = new_batch_size;
+		batch_X.resize(batch_size, in_channels, in_h, in_w);
+		batch_Y.resize(batch_size, 1, 1);
+		for (const auto& layer : net) {
+			layer->reset_batch(batch_size);
+		}
+	}
+
+	void SimpleNN::print_loss_error(const Vector& expected, const Vector& predicted, bool isTraining)
+	{
+		double loss = net.back()->calc_loss(expected);
+		double error = 0.0;
+		for (int n = 0; n < expected.size(); n++) {
+			if (expected(n) != predicted(n)) {
+				error += 1.0;
+			}
+		}
+		cout << fixed << setprecision(4) << setw(6) << std::right;
+		if (isTraining) {
+			cout << " - loss: " << loss;
+			cout << ", error: " << error / batch_size * 100 << "%";
+		}
+		else {
+			cout << " - loss(validation): " << loss;
+			cout << ", error(validation): " << error / batch_size * 100 << "%" << endl;
+		}
+	}
+
+	Vector SimpleNN::predict(const Tensor& X)
+	{
+		forward_propagate(X, true);
+		Vector output(batch_size);
+		const Tensor& last = net.back()->output;
+		for (int n = 0; n < batch_size; n++) {
+			output(n) = (int)std::distance(last[n][0].begin(), 
+				std::max_element(last[n][0].begin(), last[n][0].end()));
+		}
+		return output;
 	}
 }
