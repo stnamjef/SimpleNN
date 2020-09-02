@@ -1,100 +1,154 @@
 #pragma once
-#include <time.h>
+#include "fully_connected_layer.h"
 #include "convolutional_layer.h"
-#include "pooling_layer.h"
-#include "dense_layer.h"
+#include "max_pooling_layer.h"
+#include "average_pooling_layer.h"
 #include "activation_layer.h"
-#include "output_layer.h"
-#include "flatten_layer.h"
-#include "batch_normalization_layer.h"
+#include "batch_normalization_1d_layer.h"
+#include "batch_normalization_2d_layer.h"
+#include "sgd_optimizer.h"
 
 namespace simple_nn
 {
+	int PROGRESS_BAR_LEGNTH = 30;
+
 	class SimpleNN
 	{
 	private:
+		int batch;
 		int n_batch;
-		int batch_size;
-		int in_channels;
 		int in_h;
 		int in_w;
+		int in_channels;
+		SGD* optim;
 		vector<Layer*> net;
 		vector<vector<int>> batch_indices;
-		Tensor batch_X;
-		Tensor batch_Y;
 	public:
 		SimpleNN();
 		void add(Layer* layer);
-		void fit(const Tensor& X,
-			const Vector& Y,
-			double l_rate,
+		void fit(const float* X,
+			int n_data,
+			const int* Y,
+			int n_label,
 			int n_epoch,
-			int batch_size,
-			double lambda,
-			const Tensor& test_X = {},
-			const Vector& test_Y = {});
-		Vector predict(const Tensor& X);
+			int batch,
+			SGD* optim,
+			const float* valid_X = nullptr,
+			int n_data_valid = 0,
+			const int* valid_Y = nullptr,
+			int n_label_valid = 0);
+		void predict(const float* X, float* predicted);
 	private:
-		void set_network(int n_batch, int batch_size);
-		void generate_batch_indices();
-		void get_batch(const Tensor& X, const vector<int>& batch_idx);
-		void get_batch(const Vector& Y, const vector<int>& batch_idx);
-		void forward_propagate(const Tensor& X, bool isPrediction = false);
-		void backward_propagate(const Tensor& X, const Tensor& Y);
-		void update_weight(double l_rate, double lambda);
-		void reset_batch(int new_batch_size);
-		void print_loss_error(const Vector& expected, const Vector& predicted, bool isTraining);
+		void set_network(int n_data, int n_label, int batch, SGD* optim);
+		void generate_batch_indices(int batch, int n_batch, vector<vector<int>>& batch_indices, bool shuffle = true);
+		void get_batch_X(const float* X, int batch_idx, float* batch_X);
+		void get_batch_Y(const int* Y, int batch_idx, int* batch_Y);
+		void forward_propagate(const float* X, bool isEval);
+		void classify(const float* prev_out, int n_label, float* classified);
+		void error_criterion(const float* classified, const int* labels, float& running_error);
+		void loss_criterion(const float* prev_out, const int* labels, float& running_loss);
+		void zero_grad();
+		void backward_propagate(const float* X);
+		void update_weight();
 	};
-	void print_progress(int epoch, int n_epoch, int count);
+
+	void print_progress(int epoch, int n_epoch, int n_bar);
+	void print_time_loss_error(float loss, float error, int n_batch, duration<float> sec,
+							   float loss_valid, float error_valid, int n_batch_valid);
+
+	// function definition
 
 	SimpleNN::SimpleNN() :
+		batch(0),
 		n_batch(0),
-		batch_size(0),
-		in_channels(0),
 		in_h(0),
-		in_w(0) {}
+		in_w(0),
+		in_channels(0) {}
 
 	void SimpleNN::add(Layer* layer) { net.push_back(layer); }
 
-	void SimpleNN::fit(const Tensor& X,
-		const Vector& Y,
-		double l_rate,
+	void SimpleNN::fit(const float* X,
+		int n_data,
+		const int* Y,
+		int n_label,
 		int n_epoch,
-		int batch_size,
-		double lambda,
-		const Tensor& test_X,
-		const Vector& test_Y)
+		int batch,
+		SGD* optim,
+		const float* valid_X,
+		int n_data_valid,
+		const int* valid_Y,
+		int n_label_valid)
 	{
-		set_network(X.batches() / batch_size, batch_size);
-		for (int epoch = 0; epoch < n_epoch; epoch++) {
-			int count = 0;
-			int range = n_batch / 30;
-			clock_t start = clock();
+		set_network(n_data, n_label, batch, optim);
+
+		float* classified;
+		float* batch_X;
+		int* batch_Y;
+
+		allocate_memory(classified, n_batch);
+		allocate_memory(batch_X, batch * in_h * in_w);
+		allocate_memory(batch_Y, batch);
+
+		for (int e = 0; e < n_epoch; e++) {
+
+			float running_loss = 0.0F;
+			float running_error = 0.0F;
+
+			int n_bar = 0;
+			int print = n_batch / PROGRESS_BAR_LEGNTH;
+			system_clock::time_point start = system_clock::now();
+
 			for (int n = 0; n < n_batch; n++) {
-				get_batch(X, batch_indices[n]);
-				get_batch(Y, batch_indices[n]);
-				forward_propagate(batch_X);
-				backward_propagate(batch_X, batch_Y);
-				update_weight(l_rate, lambda);
-				if ((n % range == 0 || n == n_batch - 1) && count <= 30) {
-					print_progress(epoch, n_epoch, count);
-					count++;
+				get_batch_X(X, n, batch_X);
+				get_batch_Y(Y, n, batch_Y);
+
+				forward_propagate(batch_X, false);
+				classify(net.back()->output, n_label, classified);
+				error_criterion(classified, batch_Y, running_error);
+
+				zero_grad();
+				loss_criterion(net.back()->output, batch_Y, running_loss);
+				backward_propagate(batch_X);
+				update_weight();
+				if (n % print == 0 && n_bar <= PROGRESS_BAR_LEGNTH) {
+					print_progress(e, n_epoch, n_bar);
+					n_bar++;
 				}
 			}
-			cout << " - t: " << (double)(clock() - start) / CLOCKS_PER_SEC;
-			reset_batch(X.batches());
-			print_loss_error(Y, predict(X), true);
-			reset_batch(test_X.batches());
-			print_loss_error(test_Y, predict(test_X), false);
-			reset_batch(batch_size);
+
+			system_clock::time_point end = system_clock::now();
+
+			float running_loss_valid = 0.0F;
+			float running_error_valid = 0.0F;
+
+			// temporary code, must be modified
+			int n_batch_valid = 0;
+			if (valid_X != nullptr && valid_Y != nullptr) {
+				n_batch_valid = n_data_valid / batch;
+				vector<vector<int>> batch_indices_valid;
+				generate_batch_indices(batch, n_batch_valid, batch_indices_valid, false);
+				for (int n = 0; n < n_batch_valid; n++) {
+					get_batch_X(valid_X, n, batch_X);
+					get_batch_Y(valid_Y, n, batch_Y);
+
+					forward_propagate(batch_X, true);
+					classify(net.back()->output, n_label, classified);
+					error_criterion(classified, batch_Y, running_error_valid);
+					loss_criterion(net.back()->output, batch_Y, running_loss_valid);
+				}
+			}
+			print_time_loss_error(running_loss, running_error, n_batch, end - start,
+								  running_loss_valid, running_error_valid, n_batch_valid);
 		}
+		delete_memory(classified);
+		delete_memory(batch_X);
+		delete_memory(batch_Y);
 	}
 
-	void SimpleNN::set_network(int n_batch, int batch_size)
+	void SimpleNN::set_network(int n_data, int n_label, int batch, SGD* optim)
 	{
-		vector<int>in_shape = net.front()->input_shape();
-		this->n_batch = n_batch;
-		this->batch_size = batch_size;
+		this->batch = batch;
+		vector<int> in_shape = net.front()->input_shape();
 		if (in_shape.size() == 3) {
 			in_h = in_shape[0];
 			in_w = in_shape[1];
@@ -105,150 +159,280 @@ namespace simple_nn
 			in_w = 1;
 			in_channels = 1;
 		}
-		batch_X.resize(batch_size, in_channels, in_h, in_w);
-		batch_Y.resize(batch_size, 1, 1);
-		generate_batch_indices();
+
+		n_batch = n_data / batch;
+		generate_batch_indices(batch, n_batch, batch_indices, false);
 
 		for (int l = 0; l < net.size(); l++) {
 			if (l == 0) {
-				net[l]->set_layer(batch_size, in_shape);
+				net[l]->set_layer(batch, in_shape);
 			}
 			else {
-				net[l]->set_layer(batch_size, net[l - 1]->output_shape());
+				net[l]->set_layer(batch, net[l - 1]->output_shape());
 			}
+		}
+
+		this->optim = optim;
+		this->optim->set(batch, n_label);
+
+		if (net.back()->output_shape().size() > 1) {
+			throw logic_error("SimpleNN::set_network(int, int): The last layer must be 1d.");
 		}
 	}
 
-	void SimpleNN::generate_batch_indices()
+	void SimpleNN::generate_batch_indices(int batch, int n_batch, vector<vector<int>>& batch_indices, bool shuffle)
 	{
-		vector<int> ranNum((__int64)n_batch * batch_size);
-		for (int i = 0; i < ranNum.size(); i++) {
-			ranNum[i] = i;
+		vector<int> ran_num(batch * n_batch);
+		for (int i = 0; i < ran_num.size(); i++) {
+			ran_num[i] = i;
 		}
 
-		/*unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
-		std::shuffle(ranNum.begin(), ranNum.end(), std::default_random_engine(seed));*/
+		if (shuffle) {
+			unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
+			std::shuffle(ran_num.begin(), ran_num.end(), std::default_random_engine(seed));
+		}
 
-		batch_indices.resize(n_batch, vector<int>(batch_size));
+		batch_indices.resize(n_batch, vector<int>(batch));
 		for (int i = 0; i < n_batch; i++) {
-			for (int j = 0; j < batch_size; j++) {
-				batch_indices[i][j] = ranNum[(__int64)i * batch_size + j];
+			for (int j = 0; j < batch; j++) {
+				batch_indices[i][j] = ran_num[i * batch + j];
 			}
 		}
 	}
 
-	void SimpleNN::get_batch(const Tensor& X, const vector<int>& batch_idx)
+	void SimpleNN::get_batch_X(const float* X, int batch_idx, float* batch_X)
 	{
-		for (int n = 0; n < batch_size; n++) {
-			for (int c = 0; c < in_channels; c++) {
-				batch_X[n][c] = X[batch_idx[n]][c];
-			}
+		// 입력 이미지의 채널은 모두 1이라 가정함.
+		int im_size = in_h * in_w;
+		const vector<int>& indices = batch_indices[batch_idx];
+		for (int i = 0; i < indices.size(); i++) {
+			const float* src = X + im_size * indices[i];
+			float* dst = batch_X + im_size * i;
+			std::copy(src, src + im_size, dst);
 		}
 	}
 
-	void SimpleNN::get_batch(const Vector& Y, const vector<int>& batch_idx)
+	void SimpleNN::get_batch_Y(const int* Y, int batch_idx, int* batch_Y)
 	{
-		for (int n = 0; n < batch_size; n++) {
-			batch_Y[n][0](0) = Y(batch_idx[n]);
+		const vector<int>& indices = batch_indices[batch_idx];
+		for (int i = 0; i < indices.size(); i++) {
+			batch_Y[i] = Y[indices[i]];
 		}
 	}
 
-	void SimpleNN::forward_propagate(const Tensor& X, bool isPrediction)
+	void SimpleNN::forward_propagate(const float* X, bool isEval)
 	{
-		for (int l = 0; l < net.size(); l++)
-		{
+		for (int l = 0; l < net.size(); l++) {
+			set_zero(net[l]->output, net[l]->get_out_block_size());
 			if (l == 0) {
-				net[l]->forward_propagate(X, isPrediction);
+				net[l]->forward_propagate(X, isEval);
 			}
 			else {
-				net[l]->forward_propagate(net[l - 1]->output, isPrediction);
+				net[l]->forward_propagate(net[l - 1]->output, isEval);
 			}
 		}
 	}
 
-	void SimpleNN::backward_propagate(const Tensor& X, const Tensor& Y)
+	void SimpleNN::classify(const float* prev_out, int n_label, float* classified)
 	{
-		for (int l = (int)net.size() - 1; l >= 0; l--)
-		{
+		for (int i = 0; i < batch; i++) {
+			const float* src = prev_out + n_label * i;
+			float* dst = classified + i;
+			*dst = (float)std::distance(src, std::max_element(src, src + n_label));
+		}
+	}
+
+	void SimpleNN::error_criterion(const float* classified, const int* labels, float& running_error)
+	{
+		running_error += optim->error_criterion(classified, labels);
+	}
+
+	void SimpleNN::loss_criterion(const float* prev_out, const int* labels, float& running_loss)
+	{
+		running_loss += optim->loss_criterion(prev_out, labels, net.back()->delta);
+	}
+
+	void SimpleNN::zero_grad()
+	{
+		for (const auto& l : net) {
+			set_zero(l->delta, l->get_out_block_size());
+		}
+	}
+
+	void SimpleNN::backward_propagate(const float* X)
+	{
+		for (int l = (int)net.size() - 1; l >= 0; l--) {
 			if (l == (int)net.size() - 1) {
-				net[l]->backward_propagate(Y, net[l - 1]->delta);
+				net[l]->backward_propagate(net[l - 1]->output, net[l - 1]->delta, false);
 			}
 			else if (l == 0) {
-				Tensor empty;
-				net[l]->backward_propagate(X, empty, true);
+				net[l]->backward_propagate(X, nullptr, true);
 			}
 			else {
-				net[l]->backward_propagate(net[l - 1]->output, net[l - 1]->delta);
+				net[l]->backward_propagate(net[l - 1]->output, net[l - 1]->delta, false);
+			}
+
+			/*if (l == 8) {
+				cout << "Activation(softmax):" << endl;
+				print(net[l]->delta, 1, 1, 10, 1);
+			}
+			else if (l == 7) {
+				cout << "BatchNorm1d:" << endl;
+				print(net[l]->delta, 1, 1, 10, 1);
+			}
+			else if (l == 6) {
+				cout << "Linear(10):" << endl;
+				print(net[l]->delta, 1, 1, 10, 1);
+			}
+			else if (l == 5) {
+				cout << "Activation(relu):" << endl;
+				print(net[l]->delta, 1, 1, 50, 1);
+			}
+			else if (l == 4) {
+				cout << "BatchNorm:" << endl;
+				print(net[l]->delta, 1, 1, 50, 1);
+			}
+			else if (l == 3) {
+				cout << "Linear(50):" << endl;
+				print(net[l]->delta, 1, 1, 50, 1);
+			}
+			else if (l == 2) {
+				cout << "Activation(relu):" << endl;
+				print(net[l]->delta, 1, 1, 150, 1);
+			}
+			else if (l == 1) {
+				cout << "BatchNorm:" << endl;
+				print(net[l]->delta, 1, 1, 150, 1);
+			}
+			else {
+				cout << "Linear(150):" << endl;
+				print(net[l]->delta, 1, 1, 150, 1);
+				exit(1);
+			}*/
+		}
+	}
+
+	void SimpleNN::update_weight()
+	{
+		float lr = optim->lr();
+		float decay = optim->decay();
+		for (const auto& l : net) {
+			if (l->type == CONV2D ||
+				l->type == LINEAR ||
+				l->type == BATCHNORM1D ||
+				l->type == BATCHNORM2D) {
+				l->update_weight(lr, decay);
 			}
 		}
 	}
 
-	void SimpleNN::update_weight(double l_rate, double lambda)
+	void print_progress(int epoch, int n_epoch, int n_bar)
 	{
-		for (const auto& layer : net) {
-			if (layer->type == "conv2d" ||
-				layer->type == "dense" ||
-				layer->type == "batchnorm") {
-				layer->update_weight(l_rate, lambda);
-			}
-		}
-	}
+		string bar(n_bar, ' ');
+		std::for_each(bar.begin(), bar.end(), [](char& c) { c = '='; });
 
-	void print_progress(int epoch, int n_epoch, int count)
-	{
-		int bar_length = 30;
-		string bar = "";
-		for (int i = 0; i < count; i++) {
-			bar.push_back('=');
-		}
-		cout << "Epoch " << epoch + 1 << "/" << n_epoch << "  ";
-		cout << "[" << std::setw(bar_length) << std::left << bar << "] - ";
-		cout << fixed << setprecision(2) << setw(4) << std::right;
-		cout << count / (double)bar_length * 100 << "%";
-		if (count < bar_length) {
+		cout << "Epoch" << setw(3) << epoch + 1 << "/" << n_epoch;
+		cout << " [" << setw(PROGRESS_BAR_LEGNTH) << std::left << bar << "] - ";
+		cout << fixed << setprecision(2) << setw(5) << std::right;
+		cout << n_bar / (float)PROGRESS_BAR_LEGNTH * 100 << "%";
+
+		if (n_bar < PROGRESS_BAR_LEGNTH) {
 			cout << '\r';
 		}
 	}
 
-	void SimpleNN::reset_batch(int new_batch_size)
+	void print_time_loss_error(float loss, float error, int n_batch, duration<float> sec,
+							   float loss_valid, float error_valid, int n_batch_valid)
 	{
-		batch_size = new_batch_size;
-		batch_X.resize(batch_size, in_channels, in_h, in_w);
-		batch_Y.resize(batch_size, 1, 1);
-		for (const auto& layer : net) {
-			layer->reset_batch(batch_size);
+		cout << fixed << setprecision(4);
+		cout << " - t: " << sec.count() << 's';
+		cout << " - loss: " << loss / n_batch;
+		cout << ", error: " << error / n_batch * 100 << "%";
+		if (n_batch_valid != 0) {
+			cout << " - loss(valid): " << loss_valid / n_batch_valid;
+			cout << ", error(valid): " << error_valid / n_batch_valid * 100 << "%";
 		}
+		cout << '\n';
 	}
 
-	void SimpleNN::print_loss_error(const Vector& expected, const Vector& predicted, bool isTraining)
+	void SimpleNN::predict(const float* X, float* predicted)
 	{
-		double loss = net.back()->calc_loss(expected);
-		double error = 0.0;
-		for (int n = 0; n < expected.size(); n++) {
-			if (expected(n) != predicted(n)) {
-				error += 1.0;
-			}
-		}
-		cout << fixed << setprecision(4) << setw(6) << std::right;
-		if (isTraining) {
-			cout << " - loss: " << loss;
-			cout << ", error: " << error / batch_size * 100 << "%";
-		}
-		else {
-			cout << " - loss(validation): " << loss;
-			cout << ", error(validation): " << error / batch_size * 100 << "%" << endl;
-		}
-	}
-
-	Vector SimpleNN::predict(const Tensor& X)
-	{
+		// do not use it yet
+		exit(1);
 		forward_propagate(X, true);
-		Vector output(batch_size);
-		const Tensor& last = net.back()->output;
-		for (int n = 0; n < batch_size; n++) {
-			output(n) = (int)std::distance(last[n][0].begin(), 
-				std::max_element(last[n][0].begin(), last[n][0].end()));
-		}
-		return output;
+		predicted = net.back()->output;
 	}
+
+	//void SimpleNN::forward_propagate(const float* X, bool isEval)
+	//{
+	//	for (int l = 0; l < net.size(); l++) {
+	//		if (l == 0) {
+	//			net[l]->forward_propagate(X, isEval);
+	//		}
+	//		else {
+	//			net[l]->forward_propagate(net[l - 1]->output, isEval);
+	//		}
+	//		//if (l == 1) {
+	//		//	// activation
+	//		//	/*cout << "ACTIVATION\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 6, 28, 28);*/
+	//		//}
+	//		//else if (l == 2) {
+	//		//	// pool2d
+	//		//	/*cout << "1st POOL2d\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 6, 14, 14);*/
+	//		//}
+	//		//else if (l == 3) {
+	//		//	// conv2d
+	//		//	/*cout << "2nd CONV2D\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 16, 10, 10);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 4) {
+	//		//	// activation
+	//		//	/*cout << "ACTIVATION\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 16, 10, 10);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 5) {
+	//		//	// pool2d
+	//		//	/*cout << "2nd POOL2D\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 16, 5, 5);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 6) {
+	//		//	// linear
+	//		//	/*cout << "1st LINEAR\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 1, 120, 1);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 7) {
+	//		//	// activation
+	//		//	/*cout << "ACTIVATION\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 1, 120, 1);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 8) {
+	//		//	// 2nd linear
+	//		//	/*cout << "\n\n\n\n\n\n";
+	//		//	print(net[l]->output, 2, 1, 84, 1);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 9) {
+	//		//	// activation
+	//		//	/*print(net[l]->output, 2, 1, 84, 1);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 10) {
+	//		//	// 3rd linear
+	//		//	/*print(net[l]->output, 2, 1, 10, 1);
+	//		//	exit(10);*/
+	//		//}
+	//		//else if (l == 11) {
+	//		//	// activation
+	//		//	/*print(net[l]->output, 2, 1, 10, 1);
+	//		//	exit(10);*/
+	//		//}
+	//	}
+	//}
 }

@@ -3,270 +3,278 @@
 
 namespace simple_nn
 {
-	class Conv2D : public Layer
+	class Conv2d : public Layer
 	{
-	private:
-		int batch_size;
-		int in_channels;
-		int out_channels;	// also # of kernels
+	public:
+		int batch;
+		int in_chs;
+		int out_chs;
 		int in_h;
 		int in_w;
-		int kernel_h;
-		int kernel_w;
+		int ker_h;
+		int ker_w;
 		int out_h;
 		int out_w;
 		int pad;
+		int out_block_size;
+		int ker_block_size;
 		string init_opt;
-		vector<vector<int>> indices;
-		Tensor kernel;
-		Tensor dkernel;
-		Vector bias;
-		Vector dbias;
+		float* kernel;
+		float* dkernel;
+		float* bias;
+		float* dbias;
 	public:
-		Conv2D(int out_channels,
-			const vector<int>& kernel_size,
+		Conv2d(int out_channels,
+			int kernel_size,
 			int pad,
-			string init_opt,
 			const vector<int>& input_shape,
-			const vector<vector<int>>& indices = {});
-		Conv2D(int out_channels,
-			const vector<int>& kernel_size,
+			string init_opt = "normal");
+		Conv2d(int out_channels,
+			int kernel_size,
 			int pad,
-			string init_opt,
-			const vector<vector<int>>& indices = {});
+			string init_opt = "normal");
+		~Conv2d();
 		void set_layer(int batch_size, const vector<int>& input_shape) override;
-		void reset_batch(int batch_size) override;
-		void forward_propagate(const Tensor& prev_out, bool isPrediction) override;
-		void backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst) override;
-		void update_weight(double l_rate, double lambda) override;
+		void forward_propagate(const float* prev_out, bool isPrediction) override;
+		void backward_propagate(const float* prev_out, float* prev_delta, bool isFirst) override;
+		void update_weight(float lr, float decay) override;
 		vector<int> input_shape() override;
 		vector<int> output_shape() override;
-	private:
-		void init_kernel(int n_in, int n_out);
-		void init_dkernel();
+		int get_out_block_size() override;
 	};
 
-	Conv2D::Conv2D(int out_channels,
-		const vector<int>& kernel_size,
+	Conv2d::Conv2d(int out_channels,
+		int kernel_size,
 		int pad,
-		string init_opt,
 		const vector<int>& input_shape,
-		const vector<vector<int>>& indices) :
-		Layer("conv2d"),
-		batch_size(0),
-		in_channels(input_shape[2]),
-		out_channels(out_channels),
+		string init_opt) :
+		Layer(CONV2D),
+		batch(0),
+		in_chs(input_shape[2]),
+		out_chs(out_channels),
 		in_h(input_shape[0]),
 		in_w(input_shape[1]),
-		kernel_h(kernel_size[0]),
-		kernel_w(kernel_size[1]),
-		out_h(calc_outsize(in_h, kernel_h, 1, pad)),
-		out_w(calc_outsize(in_w, kernel_w, 1, pad)),
+		ker_h(kernel_size),
+		ker_w(kernel_size),
+		out_h(calc_outsize(in_h, ker_h, 1, pad)),
+		out_w(calc_outsize(in_w, ker_w, 1, pad)),
 		pad(pad),
-		init_opt(init_opt),
-		indices(indices) {}
+		out_block_size(0),
+		ker_block_size(0),
+		init_opt(init_opt)
+	{
+		if (init_opt != "normal" && init_opt != "uniform") {
+			throw logic_error("Conv2D::Conv2D(int, int, ...): Invalid init option.");
+		}
+	}
 
-	Conv2D::Conv2D(int out_channels,
-		const vector<int>& kernel_size,
+	Conv2d::Conv2d(int out_channels,
+		int kernel_size,
 		int pad,
-		string init_opt,
-		const vector<vector<int>>& indices) :
-		Layer("conv2d"),
-		batch_size(0),
-		in_channels(0),
-		out_channels(out_channels),
+		string init_opt) :
+		Layer(CONV2D),
+		batch(0),
+		in_chs(0),
+		out_chs(out_channels),
 		in_h(0),
 		in_w(0),
-		kernel_h(kernel_size[0]),
-		kernel_w(kernel_size[1]),
+		ker_h(kernel_size),
+		ker_w(kernel_size),
 		out_h(0),
 		out_w(0),
 		pad(pad),
-		init_opt(init_opt),
-		indices(indices) {}
-
-	void Conv2D::set_layer(int batch_size, const vector<int>& input_shape)
+		out_block_size(0),
+		ker_block_size(0),
+		init_opt(init_opt)
 	{
-		this->batch_size = batch_size;
+		if (init_opt != "normal" && init_opt != "uniform") {
+			throw logic_error("Conv2D::Conv2D(int, int, ...): Invalid init option.");
+		}
+	}
+
+	Conv2d::~Conv2d()
+	{
+		delete_memory(output);
+		delete_memory(delta);
+		delete_memory(kernel);
+		delete_memory(dkernel);
+		delete_memory(bias);
+		delete_memory(dbias);
+	}
+
+	void Conv2d::set_layer(int batch, const vector<int>& input_shape)
+	{
+		this->batch = batch;
 		in_h = input_shape[0];
 		in_w = input_shape[1];
-		in_channels = input_shape[2];
-		out_h = calc_outsize(in_h, kernel_h, 1, pad);
-		out_w = calc_outsize(in_w, kernel_w, 1, pad);
+		in_chs = input_shape[2];
+		out_h = calc_outsize(in_h, ker_h, 1, pad);
+		out_w = calc_outsize(in_w, ker_w, 1, pad);
+		out_block_size = batch * out_chs * out_h * out_w;
+		ker_block_size = out_chs * in_chs * ker_h * ker_w;
 
-		output.resize(batch_size, out_channels, out_h, out_w);
-		delta.resize(batch_size, out_channels, out_h, out_w);
-		kernel.resize(out_channels, in_channels, kernel_h, kernel_w);
-		dkernel.resize(out_channels, in_channels, kernel_h, kernel_w);
-		bias.resize(out_channels);
-		dbias.resize(out_channels);
+		allocate_memory(output, out_block_size);
+		allocate_memory(delta, out_block_size);
+		allocate_memory(kernel, ker_block_size);
+		allocate_memory(dkernel, ker_block_size);
+		allocate_memory(bias, out_chs);
+		allocate_memory(dbias, out_chs);
 
-		init_kernel(in_h * in_w * in_channels, out_h * out_w);
-		bias.setZero();
-		init_dkernel();
-		dbias.setZero();
-		if (this->indices.size() == 0) {
-			this->indices.resize(in_channels, vector<int>(out_channels, 1));
-		}
+		init_weight(kernel, ker_block_size, in_h * in_w * in_chs, out_h * out_w, init_opt);
+		set_zero(dkernel, ker_block_size);
 	}
 
-	void Conv2D::reset_batch(int batch_size)
+	void im2col(const float* im, int channels,
+		int in_h, int in_w,
+		int out_h, int out_w,
+		int ksize, int pad, float* im_col)
 	{
-		this->batch_size = batch_size;
-		output.resize(batch_size, out_channels, out_h, out_w);
-	}
+		int im_col_height = ksize * ksize * channels;
+		int im_col_width = out_h * out_w;
 
-	void Conv2D::init_kernel(int n_in, int n_out)
-	{
-		unsigned seed = (unsigned)chrono::steady_clock::now().time_since_epoch().count();
-		default_random_engine e(444);
-
-		if (init_opt == "normal")
-		{
-			double var = std::sqrt(2 / ((double)n_in + n_out));
-			normal_distribution<double> dist(0, var);
-			for (int n = 0; n < out_channels; n++) {
-				for (int c = 0; c < in_channels; c++) {
-					for (int i = 0; i < kernel_h; i++) {
-						for (int j = 0; j < kernel_w; j++) {
-							kernel[n][c](i, j) = dist(e);
-						}
+		int c, h, w;
+		for (c = 0; c < im_col_height; c++) {
+			int w_offset = c % ksize;
+			int h_offset = (c / ksize) % ksize;
+			int im_c = c / ksize / ksize;			// channel index
+			for (h = 0; h < out_h; h++) {
+				for (w = 0; w < out_w; w++) {
+					int i = h + h_offset - pad;
+					int j = w + w_offset - pad;
+					int idx = (c * out_h + h) * out_w + w;
+					if (i >= 0 && i < in_h &&
+						j >= 0 && j < in_w) {
+						im_col[idx] = im[j + in_w * (i + in_h * im_c)];
 					}
-				}
-			}
-		}
-		else
-		{
-			double r = 1 / std::sqrt((double)n_in);
-			uniform_real_distribution<double> dist(-r, r);
-			for (int n = 0; n < out_channels; n++) {
-				for (int c = 0; c < in_channels; c++) {
-					for (int i = 0; i < kernel_h; i++) {
-						for (int j = 0; j < kernel_w; j++) {
-							kernel[n][c](i, j) = dist(e);
-						}
+					else {
+						im_col[idx] = 0.0F;
 					}
 				}
 			}
 		}
 	}
 
-	void Conv2D::init_dkernel()
+	void add_bias(float* C, int N, float bias)
 	{
-		for (int n = 0; n < out_channels; n++) {
-			for (int c = 0; c < in_channels; c++) {
-				dkernel[n][c].setZero();
-			}
-		}
+		std::for_each(C, C + N, [&](float& elem) { elem += bias; });
 	}
 
-	void Conv2D::forward_propagate(const Tensor& prev_out, bool isPrediction)
+	void Conv2d::forward_propagate(const float* prev_out, bool isPrediction)
 	{
-		for (int n = 0; n < batch_size; n++) {
-			for (int k = 0; k < out_channels; k++) {
-				output[n][k].setZero();
-				for (int c = 0; c < in_channels; c++) {
-					if (indices[c][k] != 0) {
-						for (int i = 0; i < out_h; i++) {
-							for (int j = 0; j < out_w; j++) {
-								for (int x = 0; x < kernel_h; x++) {
-									for (int y = 0; y < kernel_w; y++) {
-										int ii = i + x - pad;
-										int jj = j + y - pad;
-										if (ii >= 0 && ii < in_h &&
-											jj >= 0 && jj < in_w) {
-											output[n][k](i, j) += prev_out[n][c](ii, jj) * kernel[k][c](x, y);
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-				output[n][k] += bias(k);
+		/*
+		* A: M x K = 1 x (ker_h * ker_w * in_channels)
+		* B: K x N = (ker_h * ker_w * in_channels) x (out_h * out_w)
+		*/
+		int n, c;
+		int M = 1;
+		int N = out_h * out_w;
+		int K = ker_h * ker_w * in_chs;
+		float* space = new float[K * N];
+
+		for (n = 0; n < batch; n++) {
+			float* B = space;
+			const float* im = prev_out + in_h * in_w * in_chs * n;
+			im2col(im, in_chs, in_h, in_w, out_h, out_w, ker_h, pad, B);
+			for (c = 0; c < out_chs; c++) {
+				const float* A = kernel + c * K;
+				float* C = output + N * (c + out_chs * n);
+				gemm_nn(M, N, K, 1.0F, A, K, B, N, C, N);
+				//cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, 1.0F, A, K, B, N, 0.0F, C, N);
+				add_bias(C, N, bias[c]);
 			}
+			set_zero(B, K * N);
 		}
+		delete_memory(space);
 	}
 
-	void Conv2D::backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst)
+	void Conv2d::backward_propagate(const float* prev_out, float* prev_delta, bool isFirst)
 	{
-		// calc delta w.r.t the kernel & the bias of this layer
-		for (int n = 0; n < batch_size; n++) {
-			for (int k = 0; k < out_channels; k++) {
-				for (int c = 0; c < in_channels; c++) {
-					if (indices[c][k] != 0) {
-						for (int i = 0; i < kernel_h; i++) {
-							for (int j = 0; j < kernel_w; j++) {
-								for (int x = 0; x < out_h; x++) {
-									for (int y = 0; y < out_w; y++) {
-										int ii = i + x - pad;
-										int jj = j + y - pad;
-										if (ii >= 0 && ii < in_h &&
-											jj >= 0 && jj < in_w) {
-											dkernel[k][c](i, j) += prev_out[n][c](ii, jj) * delta[n][k](x, y);
-										}
-									}
-								}
-							}
-						}
-					}
+		/*
+		* A: M x K = 1 x (out_h x out_w)
+		* B: K x N = (out_h * out_w) x ( ker_h * ker_w) 
+		*/
+		int n, c1, c2;
+		int M = 1;
+		int N = ker_h * ker_w;
+		int K = out_h * out_w;
+		float* space = new float[K * N];
+
+		for (n = 0; n < batch; n++) {
+			for (c1 = 0; c1 < in_chs; c1++) {
+				float* B = space;
+				const float* im = prev_out + in_h * in_w * (c1 + in_chs * n);
+				im2col(im, 1, in_h, in_w, ker_h, ker_w, out_h, pad, B);
+				for (c2 = 0; c2 < out_chs; c2++) {
+					const float* A = delta + K * (c2 + out_chs * n);
+					float* C = dkernel + N * (c1 + in_chs * c2);
+					gemm_nn(M, N, K, 1.0F, A, K, B, N, C, N);
+					//cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, 1.0F, A, K, B, N, 0.0F, C, N);
 				}
-				dbias(k) += delta[n][k].sum();
+				set_zero(B, K * N);
 			}
 		}
+
+		for (n = 0; n < batch; n++) {
+			for (c1 = 0; c1 < out_chs; c1++) {
+				float* A = delta + K * (c1 + out_chs * n);
+				dbias[c1] += std::accumulate(A, A + K, 0.0F);
+			}
+		}
+
+		delete_memory(space);
+
 		if (!isFirst) {
-			// calc delta w.r.t the output of the previous layer
-			int pad = kernel_h - 1;
-			for (int n = 0; n < batch_size; n++) {
-				for (int c = 0; c < in_channels; c++) {
-					prev_delta[n][c].setZero();
-					for (int k = 0; k < out_channels; k++) {
-						if (indices[c][k] != 0) {
-							for (int i = 0; i < in_h; i++) {
-								for (int j = 0; j < in_w; j++) {
-									for (int x = 0; x < kernel_h; x++) {
-										for (int y = 0; y < kernel_w; y++) {
-											int ii = i + x - pad;
-											int jj = j + y - pad;
-											if (ii >= 0 && ii < out_h &&
-												jj >= 0 && jj < out_w) {
-												int xx = kernel_h - x - 1;
-												int yy = kernel_w - y - 1;
-												prev_delta[n][c](i, j) += delta[n][k](ii, jj) * kernel[k][c](xx, yy);
-											}
-										}
-									}
-								}
-							}
-						}
+			M = 1;
+			N = in_h * in_w;
+			K = ker_h * ker_w;
+			float* space1 = new float[K * N];
+			float* space2 = new float[K];
+
+			int pad = ker_h - 1;
+			for (n = 0; n < batch; n++) {
+				for (c1 = 0; c1 < out_chs; c1++) {
+					float* B = space1;
+					const float* im = delta + out_h * out_w * (c1 + out_chs * n);
+					im2col(im, 1, out_h, out_w, in_h, in_w, ker_h, pad, B);
+					for (c2 = 0; c2 < in_chs; c2++) {
+						float* A = space2;
+						float* tmp = kernel + K * (c2 + in_chs * c1);
+						std::reverse_copy(tmp, tmp + K, A);
+						float* C = prev_delta + N * (c2 + in_chs * n);
+						gemm_nn(M, N, K, 1.0F, A, K, B, N, C, N);
+						//cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, 1.0F, A, K, B, N, 0.0F, C, N);
 					}
+					set_zero(B, K * N);
 				}
 			}
+			delete_memory(space1);
+			delete_memory(space2);
 		}
 	}
 
-	void Conv2D::update_weight(double l_rate, double lambda)
+	void Conv2d::update_weight(float lr, float decay)
 	{
-		for (int k = 0; k < out_channels; k++) {
-			for (int c = 0; c < in_channels; c++) {
-				if (indices[c][k] != 0) {
-					kernel[k][c] = (1 - (2 * l_rate * lambda) / batch_size) * kernel[k][c] - (l_rate / batch_size) * dkernel[k][c];
-					dkernel[k][c].setZero();
-				}
-			}
+		float t1 = (1 - (2 * lr * decay) / batch);
+		float t2 = lr / batch;
+		for (int i = 0; i < ker_block_size; i++) {
+			kernel[i] = t1 * kernel[i] - t2 * dkernel[i];
+			dkernel[i] = 0.0F;
 		}
-		bias = (1 - (2 * l_rate * lambda) / batch_size) * bias - (l_rate / batch_size) * dbias;
-		dbias.setZero();
+		for (int i = 0; i < out_chs; i++) {
+			bias[i] = t1 * bias[i] - t2 * dbias[i];
+			dbias[i] = 0.0F;
+		}
 	}
 
-	vector<int> Conv2D::input_shape()
+	vector<int> Conv2d::input_shape()
 	{
-		if (in_h == 0 || in_w == 0 || in_channels == 0) {
-			cout << "Conv2D::input_shape(): Input shape is empty." << endl;
-			exit(100);
+		if (in_h == 0 || in_w == 0 || in_chs == 0) {
+			throw logic_error("Conv2D::input_shape(): Input shape is empty.");
 		}
-		return { in_h, in_w, in_channels };
+		return { in_h, in_w, in_chs };
 	}
 
-	vector<int> Conv2D::output_shape() { return { out_h, out_w, out_channels }; }
+	vector<int> Conv2d::output_shape() { return { out_h, out_w, out_chs }; }
+
+	int Conv2d::get_out_block_size() { return out_block_size; }
 }

@@ -1,7 +1,7 @@
 #pragma once
 #include <fstream>
 #include <string>
-#include "tensor.h"
+using namespace std;
 
 namespace simple_nn
 {
@@ -15,7 +15,7 @@ namespace simple_nn
 		return((int)ch1 << 24) + ((int)ch2 << 16) + ((int)ch3 << 8) + ch4;
 	}
 
-	void ReadMNIST(string img_name, int NumberOfImages, int DataOfAnImage, Tensor& arr, bool asVector = false)
+	void ReadMNIST(string img_name, int NumberOfImages, int DataOfAnImage, float* arr)
 	{
 		ifstream file(img_name, ios::binary);
 		if (file.is_open()) {
@@ -33,40 +33,30 @@ namespace simple_nn
 			file.read((char*)&n_cols, sizeof(n_cols));
 			n_cols = ReverseInt(n_cols);
 
-			if (!asVector) {
-				arr.resize(NumberOfImages, 1, n_rows, n_cols);
-				for (int n = 0; n < NumberOfImages; n++) {
-					for (int i = 0; i < n_rows; i++) {
-						for (int j = 0; j < n_cols; j++) {
-							unsigned char temp = 0;
-							file.read((char*)&temp, sizeof(temp));
-							arr[n][0](i, j) = (double)temp / 255 * (1.175 + 0.1) - 0.1;
-						}
-					}
-				}
-			}
-			else {
-				arr.resize(NumberOfImages, 1, n_rows * n_cols);
-				for (int n = 0; n < NumberOfImages; n++) {
-					for (int i = 0; i < n_rows * n_cols; i++) {
+			int im_size = n_rows * n_cols;
+			for (int n = 0; n < NumberOfImages; n++) {
+				for (int i = 0; i < n_rows; i++) {
+					for (int j = 0; j < n_cols; j++) {
 						unsigned char temp = 0;
 						file.read((char*)&temp, sizeof(temp));
-						arr[n][0](i) = (double)temp / 255 * (1.175 + 0.1) - 0.1;
+
+						int idx = j + n_cols * (i + n_rows * n);
+						arr[idx] = (float)temp / 255 * (1.175F + 0.1F) - 0.1F;
+						//arr[idx] = float(temp);
 					}
 				}
 			}
 		}
 	}
 
-	void ReadMNISTLabel(string label_name, int NumberOfImages, Vector& arr)
+	void ReadMNISTLabel(string label_name, int NumberOfImages, int* arr)
 	{
-		arr.resize(NumberOfImages);
 		ifstream file(label_name);
 		for (int i = 0; i < NumberOfImages + 8; ++i) {
 			unsigned char temp = 0;
 			file.read((char*)&temp, sizeof(temp));
 			if (i > 7) {
-				arr(i - 8) = (int)temp;
+				arr[i - 8] = (int)temp;
 			}
 		}
 	}

@@ -5,164 +5,165 @@ namespace simple_nn
 {
 	class Activation : public Layer
 	{
-	public:
-		int batch_size;
+	private:
+		int batch;
 		int channels;
 		int in_h;
 		int in_w;
-		string activate_opt;
+		int out_block_size;
+		string activ_opt;
 		bool is2d;
 	public:
-		Activation(string opt);
-		void set_layer(int batch_size, const vector<int>& input_shape) override;
-		void reset_batch(int batch_size);
-		void forward_propagate(const Tensor& prev_out, bool isPrediction) override;
-		void backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst) override;
+		Activation(string activ_opt);
+		~Activation();
+		void set_layer(int batch, const vector<int>& input_shape) override;
+		void forward_propagate(const float* prev_out, bool isEval = false) override;
+		void backward_propagate(const float* prev_out, float* prev_delta, bool isFirst) override;
 		vector<int> output_shape() override;
+		int get_out_block_size() override;
 	private:
-		void tanh(const Tensor& prev_out);
-		void relu(const Tensor& prev_out);
-		void softmax(const Tensor& prev_out);
-		void calc_prev_delta_tanh(const Tensor& prev_out, Tensor& prev_delta) const;
-		void calc_prev_delta_relu(const Tensor& prev_out, Tensor& prev_delta) const;
-		void calc_prev_delta_softmax(Tensor& prev_delta) const;
+		void tanh(const float* prev_out);
+		void relu(const float* prev_out);
+		void softmax(const float* prev_out);
+		void calc_prev_delta_tanh(const float* prev_out, float* prev_delta) const;
+		void calc_prev_delta_relu(const float* prev_out, float* prev_delta) const;
+		void calc_prev_delta_softmax(float* prev_delta) const;
 	};
 
-	Activation::Activation(string opt) :
-		Layer("activation"),
-		batch_size(0),
+	Activation::Activation(string activ_opt) :
+		Layer(ACTIVATION),
+		batch(0),
 		channels(0),
 		in_h(0),
 		in_w(0),
-		activate_opt(opt),
+		out_block_size(0),
+		activ_opt(activ_opt),
 		is2d(false) {}
 
-	void Activation::set_layer(int batch_size, const vector<int>& input_shape)
+	Activation::~Activation()
 	{
-		this->batch_size = batch_size;
+		delete_memory(output);
+		delete_memory(delta);
+	}
+
+	void Activation::set_layer(int batch, const vector<int>& input_shape)
+	{
+		this->batch = batch;
 		if (input_shape.size() == 3) {
 			channels = input_shape[2];
 			in_h = input_shape[0];
 			in_w = input_shape[1];
+			out_block_size = batch * channels * in_h * in_w;
 			is2d = true;
-			output.resize(batch_size, channels, in_h, in_w);
-			delta.resize(batch_size, channels, in_h, in_w);
 		}
 		else {
 			channels = 1;
 			in_h = input_shape[0];
 			in_w = 1;
 			is2d = false;
-			output.resize(batch_size, channels, in_h);
-			delta.resize(batch_size, channels, in_h);
+			out_block_size = batch * in_h;
 		}
+		allocate_memory(output, out_block_size);
+		allocate_memory(delta, out_block_size);
 	}
 
-	void Activation::reset_batch(int batch_size)
+	void Activation::forward_propagate(const float* prev_out, bool isEval)
 	{
-		this->batch_size = batch_size;
-		if (is2d) {
-			output.resize(batch_size, channels, in_h, in_w);
-		}
-		else {
-			output.resize(batch_size, channels, in_h);
-		}
-	}
-
-	void Activation::forward_propagate(const Tensor& prev_out, bool isPrediction)
-	{
-		if (activate_opt == "tanh") {
+		if (activ_opt == "tanh") {
 			tanh(prev_out);
 		}
-		else if (activate_opt == "relu") {
+		else if (activ_opt == "relu") {
 			relu(prev_out);
 		}
-		else {
+		else if (activ_opt == "softmax") {
+			if (in_h > 1 && in_w > 1) {
+				throw (logic_error("Activation::forward_propagate(const float*, bool): Not a matrix function."));
+			}
 			softmax(prev_out);
 		}
+		else {
+			throw(logic_error("Activation::forward_propagate(const float*, bool): Invalid activation option."));
+		}
 	}
 
-	void Activation::tanh(const Tensor& prev_out)
+	void Activation::tanh(const float* prev_out)
 	{
-		for (int n = 0; n < batch_size; n++) {
+		std::transform(prev_out, prev_out + out_block_size, output,
+			[](const float& elem) { return 2 / (1 + std::exp(-2.0F * elem)) - 1; });
+	}
+
+	void Activation::relu(const float* prev_out)
+	{
+		std::transform(prev_out, prev_out + out_block_size, output,
+			[](const float& elem) { return std::max(0.0F, elem); });
+	}
+
+	float sum_exp(const float* p, int size, float max)
+	{
+		float out = std::accumulate(p, p + size, 0.0F,
+			[&](const float& sum, const float& elem) { return sum + std::exp(elem - max); });
+		return out;
+	}
+
+	void Activation::softmax(const float* prev_out)
+	{
+		int im_size = in_h * in_w;
+		for (int n = 0; n < batch; n++) {
 			for (int c = 0; c < channels; c++) {
-				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), output[n][c].begin(),
-					[](const double& elem) {
-					return 2 / (1 + std::exp(-elem)) - 1;
+				int offset = im_size * (c + channels * n);
+				const float* begin = prev_out + offset;
+				float max = *std::max_element(begin, begin + im_size);
+				float sum = sum_exp(begin, im_size, max);
+				std::transform(begin, begin + im_size, output + offset,
+					[&](const float& elem) {
+					return std::exp(elem - max) / sum;
 				});
 			}
 		}
 	}
 
-	void Activation::relu(const Tensor& prev_out)
+	void Activation::backward_propagate(const float* prev_out, float* prev_delta, bool isFirst)
 	{
-		for (int n = 0; n < batch_size; n++) {
-			for (int c = 0; c < channels; c++) {
-				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), output[n][c].begin(),
-					[](const double& elem) {
-					return std::max(0.0, elem);
-				});
-			}
-		}
-	}
-
-	void Activation::softmax(const Tensor& prev_out)
-	{
-		if (in_h > 1 && in_w > 1) {
-			cout << "softmax(const Vector&): Not a matrix function." << endl;
-			exit(100);
-		}
-		for (int n = 0; n < batch_size; n++) {
-			for (int c = 0; c < channels; c++) {
-				double max = prev_out[n][c].max();
-				double sum_exp_ = sum_exp(prev_out[n][c], max);
-				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), output[n][c].begin(),
-					[&](const double& elem) {
-					return std::exp(elem + max) / sum_exp_;
-				});
-			}
-		}
-	}
-
-	void Activation::backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst)
-	{
-		if (activate_opt == "tanh") {
+		if (activ_opt == "tanh") {
 			calc_prev_delta_tanh(prev_out, prev_delta);
 		}
-		else if (activate_opt == "relu") {
+		else if (activ_opt == "relu") {
 			calc_prev_delta_relu(prev_out, prev_delta);
 		}
-		else {
+		else if (activ_opt == "softmax") {
+			if (in_h > 1 && in_w > 1) {
+				throw (logic_error("Activation::forward_propagate(const float*, bool): Not a matrix function."));
+			}
 			calc_prev_delta_softmax(prev_delta);
 		}
-	}
-
-	void Activation::calc_prev_delta_tanh(const Tensor& prev_out, Tensor& prev_delta) const
-	{
-		for (int n = 0; n < batch_size; n++) {
-			for (int c = 0; c < channels; c++) {
-				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), delta[n][c].begin(), prev_delta[n][c].begin(),
-					[](const double& elem1, const double& elem2) {
-					double tanh = 2 / (1 + std::exp(-elem1)) - 1;
-					return elem2 * 0.5 * (1 - tanh * tanh);
-				});
-			}
+		else {
+			throw(logic_error("Activation::forward_propagate(const float*, bool): Invalid activation option."));
 		}
 	}
 
-	void Activation::calc_prev_delta_relu(const Tensor& prev_out, Tensor& prev_delta) const
+	void Activation::calc_prev_delta_tanh(const float* prev_out, float* prev_delta) const
 	{
-		for (int n = 0; n < batch_size; n++) {
-			for (int c = 0; c < channels; c++) {
-				std::transform(prev_out[n][c].begin(), prev_out[n][c].end(), delta[n][c].begin(), prev_delta[n][c].begin(),
-					[](const double& elem1, const double& elem2) {
-					return elem1 < 0 ? 0 : elem2;
-				});
-			}
-		}
+		std::transform(prev_out, prev_out + out_block_size, delta, prev_delta,
+			[](const float& elem1, const float& elem2) {
+			float tanh = 2 / (1 + std::exp(-elem1)) - 1;
+			return elem2 * (1 - tanh * tanh);
+		});
 	}
 
-	void Activation::calc_prev_delta_softmax(Tensor& prev_delta) const { prev_delta = delta; }
+	void Activation::calc_prev_delta_relu(const float* prev_out, float* prev_delta) const
+	{
+		std::transform(prev_out, prev_out + out_block_size, delta, prev_delta,
+			[](const float& elem1, const float& elem2) {
+			return (elem1 < 0) ? 0 : elem2;
+		});
+	}
+
+	void Activation::calc_prev_delta_softmax(float* prev_delta) const
+	{
+		// 복사를 해야할까?
+		std::copy(delta, delta + out_block_size, prev_delta);
+		//prev_delta = delta;
+	}
 
 	vector<int> Activation::output_shape()
 	{
@@ -173,4 +174,6 @@ namespace simple_nn
 			return { in_h };
 		}
 	}
+
+	int Activation::get_out_block_size() { return out_block_size; }
 }

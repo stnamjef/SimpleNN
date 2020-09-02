@@ -1,43 +1,36 @@
 #pragma once
-#include <iostream>
-#include <string>
-#include <vector>
-#include <chrono>
-#include <random>
-#include <limits>
-#include "tensor.h"
-#define DOUBLE_MIN std::numeric_limits<double>::min();
+#include "gemm.h"
+#include "common.h"
 using namespace std;
 
 namespace simple_nn
 {
+	enum LayerType
+	{
+		LINEAR,
+		CONV2D,
+		MAXPOOL2D,
+		AVGPOOL2D,
+		ACTIVATION,
+		FLATTEN,
+		BATCHNORM1D,
+		BATCHNORM2D,
+	};
+
 	class Layer
 	{
 	public:
-		string type;
-		Tensor output;
-		Tensor delta;
+		LayerType type;
+		float* output;
+		float* delta;
 	public:
-		Layer(string type) : type(type) {}
-		virtual void set_layer(int batch_size, const vector<int>& input_shape) = 0;
-		virtual void reset_batch(int batch_size) = 0;
-		virtual void forward_propagate(const Tensor& prev_out, bool isPrediction = false) = 0;
-		virtual void backward_propagate(const Tensor& prev_out, Tensor& prev_delta, bool isFirst = false) = 0;
-		virtual void update_weight(double l_rate, double lambda) { return; }
+		Layer(LayerType type) : type(type), output(nullptr), delta(nullptr) {}
+		virtual void set_layer(int batch, const vector<int>& input_shape) = 0;
+		virtual void forward_propagate(const float* prev_out, bool isEval = false) = 0;
+		virtual void backward_propagate(const float* prev_out, float* prev_delta, bool isFirst) = 0;
+		virtual void update_weight(float lr, float decay) { return; }
 		virtual vector<int> input_shape() { return {}; }
 		virtual vector<int> output_shape() = 0;
-		virtual double calc_loss(const Vector& Y) { return 0.0; }
+		virtual int get_out_block_size() = 0;
 	};
-
-	int calc_outsize(int in_size, int kernel_size, int stride, int pad)
-	{
-		return (int)floor((in_size + 2 * pad - kernel_size) / stride) + 1;
-	}
-
-	double sum_exp(const Matrix& mat, double max)
-	{
-		double out = std::accumulate(mat.begin(), mat.end(), 0.0,
-			[&](const double& sum, const double& elem) { return sum + std::exp(elem + max); });
-		return out;
-	}
 }
