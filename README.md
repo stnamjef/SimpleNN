@@ -22,7 +22,7 @@
 - relu
 - softmax
 
-### loss function
+### loss functions
 
 - mean squared error
 - cross-entropy
@@ -33,7 +33,9 @@
 
 ## Examples
 
-- Construct LeNet-5 with batch normalization
+- Download [MNIST](http://yann.lecun.com/exdb/mnist/) first, and put them in the project folder where "main.cpp" is located.
+
+- Construct LeNet-5 with batch normalization.
 
 ```c++
 #pragma once
@@ -100,7 +102,7 @@ int main()
 }
 ```
 
-- Construct DNN(500 x 150 x 10) with batch normalization
+- Construct DNN(500 x 150 x 10) with batch normalization.
 
 ```c++
 #pragma once
@@ -167,4 +169,3 @@ int main()
 - various activation functions and optimizers
 - 1x1 convolution
 - data loader for PASCAL VOC
-
