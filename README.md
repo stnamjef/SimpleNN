@@ -8,7 +8,7 @@
 
 ### **(1) Model
 
-![LeNet-5](/img/cnn/LeNet-5_modified.png)
+![LeNet-5](/img/LeNet-5_modified.png)
 
 위의 그림은 본 프로젝트에서 최종적으로 구현한 CNN 모델이다. LeNet-5의 구조를 그대로 따르되, 컨볼루션 층과 완전연결 층 뒤에 배치 정규화 층을 추가하였다. 또한 활성화 함수를 하이퍼볼릭탄젠트에서 ReLU로 변경하였으며, 출력 층에서는 softmax를 사용하였다. 마지막으로 손실 함수는 cross entropy로 변경하였다.
 
