@@ -4,6 +4,7 @@
 using namespace std;
 using namespace simple_nn;
 
+
 int main()
 {
 	int n_img_train = 60000;
@@ -46,7 +47,7 @@ int main()
 	model.add(new Activation("softmax"));
 
 	int n_epoch = 30, batch = 32;
-	float lr = 0.08F, decay = 0.0F;
+	float lr = 0.02f, decay = 0.f;
 
 	SGD* optim = new SGD(lr, decay, "cross entropy");
 
@@ -95,8 +96,8 @@ int main()
 //	model.add(new BatchNorm1d);
 //	model.add(new Activation("softmax"));
 //
-//	int n_epoch = 30, batch = 32;
-//	float lr = 0.01F, decay = 0;
+//	int n_epoch = 20, batch = 32;
+//	float lr = 0.01f, decay = 0;
 //
 //	SGD* optim = new SGD(lr, decay, "cross entropy");
 //

@@ -8,6 +8,7 @@
 #include "batch_normalization_2d_layer.h"
 #include "sgd_optimizer.h"
 
+
 namespace simple_nn
 {
 	int PROGRESS_BAR_LEGNTH = 30;
@@ -202,7 +203,7 @@ namespace simple_nn
 
 	void SimpleNN::get_batch_X(const float* X, int batch_idx, float* batch_X)
 	{
-		// 입력 이미지의 채널은 모두 1이라 가정함.
+		// assume that the channel of input is always one
 		int im_size = in_h * in_w;
 		const vector<int>& indices = batch_indices[batch_idx];
 		for (int i = 0; i < indices.size(); i++) {
@@ -271,44 +272,6 @@ namespace simple_nn
 			else {
 				net[l]->backward_propagate(net[l - 1]->output, net[l - 1]->delta, false);
 			}
-
-			/*if (l == 8) {
-				cout << "Activation(softmax):" << endl;
-				print(net[l]->delta, 1, 1, 10, 1);
-			}
-			else if (l == 7) {
-				cout << "BatchNorm1d:" << endl;
-				print(net[l]->delta, 1, 1, 10, 1);
-			}
-			else if (l == 6) {
-				cout << "Linear(10):" << endl;
-				print(net[l]->delta, 1, 1, 10, 1);
-			}
-			else if (l == 5) {
-				cout << "Activation(relu):" << endl;
-				print(net[l]->delta, 1, 1, 50, 1);
-			}
-			else if (l == 4) {
-				cout << "BatchNorm:" << endl;
-				print(net[l]->delta, 1, 1, 50, 1);
-			}
-			else if (l == 3) {
-				cout << "Linear(50):" << endl;
-				print(net[l]->delta, 1, 1, 50, 1);
-			}
-			else if (l == 2) {
-				cout << "Activation(relu):" << endl;
-				print(net[l]->delta, 1, 1, 150, 1);
-			}
-			else if (l == 1) {
-				cout << "BatchNorm:" << endl;
-				print(net[l]->delta, 1, 1, 150, 1);
-			}
-			else {
-				cout << "Linear(150):" << endl;
-				print(net[l]->delta, 1, 1, 150, 1);
-				exit(1);
-			}*/
 		}
 	}
 
@@ -362,77 +325,4 @@ namespace simple_nn
 		forward_propagate(X, true);
 		predicted = net.back()->output;
 	}
-
-	//void SimpleNN::forward_propagate(const float* X, bool isEval)
-	//{
-	//	for (int l = 0; l < net.size(); l++) {
-	//		if (l == 0) {
-	//			net[l]->forward_propagate(X, isEval);
-	//		}
-	//		else {
-	//			net[l]->forward_propagate(net[l - 1]->output, isEval);
-	//		}
-	//		//if (l == 1) {
-	//		//	// activation
-	//		//	/*cout << "ACTIVATION\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 6, 28, 28);*/
-	//		//}
-	//		//else if (l == 2) {
-	//		//	// pool2d
-	//		//	/*cout << "1st POOL2d\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 6, 14, 14);*/
-	//		//}
-	//		//else if (l == 3) {
-	//		//	// conv2d
-	//		//	/*cout << "2nd CONV2D\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 16, 10, 10);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 4) {
-	//		//	// activation
-	//		//	/*cout << "ACTIVATION\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 16, 10, 10);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 5) {
-	//		//	// pool2d
-	//		//	/*cout << "2nd POOL2D\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 16, 5, 5);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 6) {
-	//		//	// linear
-	//		//	/*cout << "1st LINEAR\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 1, 120, 1);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 7) {
-	//		//	// activation
-	//		//	/*cout << "ACTIVATION\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 1, 120, 1);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 8) {
-	//		//	// 2nd linear
-	//		//	/*cout << "\n\n\n\n\n\n";
-	//		//	print(net[l]->output, 2, 1, 84, 1);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 9) {
-	//		//	// activation
-	//		//	/*print(net[l]->output, 2, 1, 84, 1);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 10) {
-	//		//	// 3rd linear
-	//		//	/*print(net[l]->output, 2, 1, 10, 1);
-	//		//	exit(10);*/
-	//		//}
-	//		//else if (l == 11) {
-	//		//	// activation
-	//		//	/*print(net[l]->output, 2, 1, 10, 1);
-	//		//	exit(10);*/
-	//		//}
-	//	}
-	//}
 }
