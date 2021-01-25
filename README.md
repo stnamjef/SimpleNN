@@ -6,7 +6,7 @@
 
 ## **1. Overview**
 
-### **(1) Model
+### **(1) Model**
 
 ![LeNet-5](/img/LeNet-5_modified.png)
 
