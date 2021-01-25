@@ -7,11 +7,11 @@ namespace simple_nn
 		const float* B, int ldb,
 		float* C, int ldc)
 	{
-
 		int i, j, k;
+		#pragma omp parallel for
 		for (i = 0; i < M; i++) {
 			for (k = 0; k < K; k++) {
-				float temp = alpha * A[i * lda + k];
+				register float temp = alpha * A[i * lda + k];
 				for (j = 0; j < N; j++) {
 					C[i * ldc + j] += temp * B[k * ldb + j];
 				}
@@ -25,9 +25,10 @@ namespace simple_nn
 		float* C, int ldc)
 	{
 		int i, j, k;
+		#pragma omp parallel for
 		for (i = 0; i < M; i++) {
 			for (j = 0; j < N; j++) {
-				float sum = 0;
+				register float sum = 0;
 				for (k = 0; k < K; k++) {
 					sum += alpha * A[i * lda + k] * B[j * ldb + k];
 				}
@@ -42,9 +43,10 @@ namespace simple_nn
 		float* C, int ldc)
 	{
 		int i, j, k;
+		#pragma omp parallel for
 		for (i = 0; i < M; i++) {
 			for (k = 0; k < K; k++) {
-				float temp = alpha * A[k * lda + i];
+				register float temp = alpha * A[k * lda + i];
 				for (j = 0; j < N; j++) {
 					C[i * ldc + j] += temp * B[k * ldb + j];
 				}
