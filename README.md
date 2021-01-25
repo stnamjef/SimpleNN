@@ -61,7 +61,7 @@ Covariate shift는 신경망을 학습하는 과정에서 각 층에 입력되�
 
 ### **(4) ReLU + Cross entropy + Batch-Normalization + L2-Norm**
 
-- Epoch: 20, Batch: 32, Learning rate: 0.02, Lambda: 0.01
+- Epoch: 10, Batch: 32, Learning rate: 0.02, Lambda: 0.01
 - Training error: 0.36%, Testing error: 0.68%(original LeNet-5: 0.95%[1])
 
 ![result_regularization](/img/result_regularization.png)
