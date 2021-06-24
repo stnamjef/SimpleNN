@@ -1,10 +1,14 @@
 # SimpleNN
 
 - SimpleNN is a C++ implementation of convolutional neural network. 
-- Dependency free, pure c++ implemented.
-- Only use contiguous memory to increase the processing speed.
-- Provides GEMM(general matrix multiplication), im2col operation.
-- Can be used to deeply understand how deep learning works inside a convolutional neural network.
+- Provides ~~GEMM(GEneral Matrix Multiplication)~~, im2col, and col2im operations
+- [Update: 2021-06-24]
+  - GEMM has been replaced by Eigen library.
+
+## Requirements
+
+- C++17
+- Eigen 3.3.9
 
 ## Supported networks
 
@@ -18,6 +22,7 @@
 
 ### activation functions
 
+- sigmoid
 - tanh
 - relu
 - softmax
@@ -38,65 +43,51 @@
 - Construct LeNet-5 with batch normalization.
 
 ```c++
-#pragma once
 #include "simple_nn.h"
-#include "file_manage.h"
 using namespace std;
 using namespace simple_nn;
+using namespace Eigen;
 
 int main()
 {
-	int n_img_train = 60000;
-	int n_img_test = 10000;
-	int n_label = 10;
-	int img_size = 784;
+	int n_train = 60000, n_test = 10000;
+	int batch = 32, channels = 1, height = 28, width = 28, n_label = 10;
 
-	float* train_X;
-	float* test_X;
-	int* train_Y;
-	int* test_Y;
+	MatXf train_X = read_mnist("train-images.idx3-ubyte", n_train);
+	VecXi train_Y = read_mnist_label("train-labels.idx1-ubyte", n_train);
+	MatXf test_X = read_mnist("test-images.idx3-ubyte", n_test);
+	VecXi test_Y = read_mnist_label("test-labels.idx1-ubyte", n_test);
 
-	allocate_memory(train_X, n_img_train * img_size);
-	allocate_memory(test_X, n_img_test * img_size);
-	allocate_memory(train_Y, n_img_train);
-	allocate_memory(test_Y, n_img_test);
-
-	ReadMNIST("train-images.idx3-ubyte", n_img_train, img_size, train_X);
-	ReadMNISTLabel("train-labels.idx1-ubyte", n_img_train, train_Y);
-	ReadMNIST("test-images.idx3-ubyte", n_img_test, img_size, test_X);
-	ReadMNISTLabel("test-labels.idx1-ubyte", n_img_test, test_Y);
+	DataLoader train_loader(train_X, train_Y, batch, channels, height, width, true);
+	DataLoader test_loader(test_X, test_Y, batch, channels, height, width, false);
 
 	SimpleNN model;
-	model.add(new Conv2d(6, 5, 2, { 28, 28, 1 }, "uniform"));
+
+	model.add(new Conv2d(1, 6, 5, 2, Init::LecunUniform));
 	model.add(new BatchNorm2d);
-	model.add(new Activation("tanh"));
-	model.add(new AvgPool2d(2, 2));
-	model.add(new Conv2d(16, 5, 0, "uniform"));
+	model.add(new ReLU);
+	model.add(new MaxPool2d(2, 2));
+	model.add(new Conv2d(6, 16, 5, 0, Init::LecunUniform));
 	model.add(new BatchNorm2d);
-	model.add(new Activation("tanh"));
-	model.add(new AvgPool2d(2, 2));
-	model.add(new Linear(120, "uniform"));
+	model.add(new ReLU);
+	model.add(new MaxPool2d(2, 2));
+	model.add(new Flatten);
+	model.add(new Linear(400, 120, Init::LecunUniform));
 	model.add(new BatchNorm1d);
-	model.add(new Activation("tanh"));
-	model.add(new Linear(84, "uniform"));
+	model.add(new ReLU);
+	model.add(new Linear(120, 84, Init::LecunUniform));
 	model.add(new BatchNorm1d);
-	model.add(new Activation("tanh"));
-	model.add(new Linear(10, "uniform"));
+	model.add(new ReLU);
+	model.add(new Linear(84, 10, Init::LecunUniform));
 	model.add(new BatchNorm1d);
-	model.add(new Activation("softmax"));
+	model.add(new Softmax);
 
-	int n_epoch = 30, batch = 32;
-	float lr = 0.1F, decay = 0.005F;
+	int epochs = 30;
+	float lr = 0.01f, decay = 0.f;
 
-	SGD* optim = new SGD(lr, decay, "MSE");
-
-	model.fit(train_X, n_img_train, train_Y, n_label, n_epoch, batch, optim,
-			  test_X, n_img_test, test_Y, n_label);
-
-	delete_memory(train_X);
-	delete_memory(test_X);
-	delete_memory(train_Y);
-	delete_memory(test_Y);
+	model.compile({ batch, channels, height, width }, new SGD(lr, decay), new CrossEntropyLoss);
+	model.fit(train_loader, epochs, test_loader);
+	model.save("./model_zoo", "lenet5");
 
 	return 0;
 }
@@ -105,58 +96,42 @@ int main()
 - Construct DNN(500 x 150 x 10) with batch normalization.
 
 ```c++
-#pragma once
 #include "simple_nn.h"
-#include "file_manage.h"
 using namespace std;
 using namespace simple_nn;
+using namespace Eigen;
 
 int main()
 {
-	int n_img_train = 60000;
-	int n_img_test = 10000;
-	int n_label = 10;
-	int img_size = 784;
+	int n_train = 60000, n_test = 10000;
+	int batch = 32, channels = 1, height = 28, width = 28, n_label = 10;
 
-	float* train_X;
-	float* test_X;
-	int* train_Y;
-	int* test_Y;
+	MatXf train_X = read_mnist("train-images.idx3-ubyte", n_train);
+	VecXi train_Y = read_mnist_label("train-labels.idx1-ubyte", n_train);
+	MatXf test_X = read_mnist("test-images.idx3-ubyte", n_test);
+	VecXi test_Y = read_mnist_label("test-labels.idx1-ubyte", n_test);
 
-	allocate_memory(train_X, n_img_train * img_size);
-	allocate_memory(test_X, n_img_test * img_size);
-	allocate_memory(train_Y, n_img_train);
-	allocate_memory(test_Y, n_img_test);
-
-	ReadMNIST("train-images.idx3-ubyte", n_img_train, img_size, train_X);
-	ReadMNISTLabel("train-labels.idx1-ubyte", n_img_train, train_Y);
-	ReadMNIST("test-images.idx3-ubyte", n_img_test, img_size, test_X);
-	ReadMNISTLabel("test-labels.idx1-ubyte", n_img_test, test_Y);
+	DataLoader train_loader(train_X, train_Y, batch, channels, height, width, true);
+	DataLoader test_loader(test_X, test_Y, batch, channels, height, width, false);
 
 	SimpleNN model;
 
-	model.add(new Linear(500, 28 * 28, "uniform"));
+	model.add(new Linear(784, 500, Init::LecunUniform));
 	model.add(new BatchNorm1d);
-	model.add(new Activation("relu"));
-	model.add(new Linear(150, "uniform"));
+	model.add(new Tanh);
+	model.add(new Linear(500, 150, Init::LecunUniform));
 	model.add(new BatchNorm1d);
-	model.add(new Activation("relu"));
-	model.add(new Linear(10, "uniform"));
+	model.add(new Tanh);
+	model.add(new Linear(150, 10, Init::LecunUniform));
 	model.add(new BatchNorm1d);
-	model.add(new Activation("softmax"));
+	model.add(new Softmax);
 
-	int n_epoch = 30, batch = 32;
-	float lr = 0.01F, decay = 0.0F;
+	int epochs = 30;
+	float lr = 0.01f, decay = 0.f;
 
-	SGD* optim = new SGD(lr, decay, "cross entropy");
-
-	model.fit(train_X, n_img_train, train_Y, n_label, n_epoch, batch, optim,
-			  test_X, n_img_test, test_Y, n_label);
-
-	delete_memory(train_X);
-	delete_memory(test_X);
-	delete_memory(train_Y);
-	delete_memory(test_Y);
+	model.compile({ batch, channels, height, width }, new SGD(lr, decay), new CrossEntropyLoss);
+	model.fit(train_loader, epochs, test_loader);
+	model.save("./model_zoo", "linear");
 
 	return 0;
 }
@@ -164,8 +139,6 @@ int main()
 
 ## Ongoing list
 
-- cpu parallel processing
-- optimize GEMM with open source BLAS library(OpenBlas etc)
 - various activation functions and optimizers
 - 1x1 convolution
 - data loader for PASCAL VOC
