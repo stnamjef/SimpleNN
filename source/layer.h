@@ -1,36 +1,35 @@
 #pragma once
-#include "gemm.h"
 #include "common.h"
-using namespace std;
 
 namespace simple_nn
 {
-	enum LayerType
+	enum class LayerType
 	{
 		LINEAR,
 		CONV2D,
 		MAXPOOL2D,
 		AVGPOOL2D,
 		ACTIVATION,
-		FLATTEN,
 		BATCHNORM1D,
 		BATCHNORM2D,
+		FLATTEN
 	};
 
 	class Layer
 	{
 	public:
 		LayerType type;
-		float* output;
-		float* delta;
+		bool is_first;
+		bool is_last;
+		MatXf output;
+		MatXf delta;
 	public:
-		Layer(LayerType type) : type(type), output(nullptr), delta(nullptr) {}
-		virtual void set_layer(int batch, const vector<int>& input_shape) = 0;
-		virtual void forward_propagate(const float* prev_out, bool isEval = false) = 0;
-		virtual void backward_propagate(const float* prev_out, float* prev_delta, bool isFirst) = 0;
+		Layer(LayerType type) : type(type), is_first(false), is_last(false) {}
+		virtual void set_layer(const vector<int>& input_shape) = 0;
+		virtual void forward(const MatXf& prev_out, bool is_training = true) = 0;
+		virtual void backward(const MatXf& prev_out, MatXf& prev_delta) = 0;
 		virtual void update_weight(float lr, float decay) { return; }
-		virtual vector<int> input_shape() { return {}; }
+		virtual void zero_grad() { return; }
 		virtual vector<int> output_shape() = 0;
-		virtual int get_out_block_size() = 0;
 	};
 }

@@ -7,265 +7,217 @@ namespace simple_nn
 	{
 	private:
 		int batch;
-		int channels;
-		int in_h;
-		int in_w;
-		int out_block_size;
+		int ch;
+		int h;
+		int w;
+		int hw;
 		float eps;
 		float momentum;
-		float* xhat;
-		float* move_mu;
-		float* move_var;
-		float* mu;
-		float* var;
-		float* gamma;
-		float* dgamma;
-		float* beta;
-		float* dbeta;
+		VecXf mu;
+		VecXf var;
+		VecXf dgamma;
+		VecXf dbeta;
+		VecXf sum1;
+		VecXf sum2;
 	public:
-		BatchNorm2d(float eps = 0.00001F, float momentum = 0.9F);
-		~BatchNorm2d();
-		void set_layer(int batch, const vector<int>& input_shape) override;
-		void forward_propagate(const float* prev_out, bool isEval = false) override;
-		void backward_propagate(const float* prev_out, float* prev_delta, bool isFirst) override;
+		MatXf xhat;
+		MatXf dxhat;
+		VecXf move_mu;
+		VecXf move_var;
+		VecXf gamma;
+		VecXf beta;
+		BatchNorm2d(float eps = 0.00001f, float momentum = 0.9f);
+		void set_layer(const vector<int>& input_shape) override;
+		void forward(const MatXf& prev_out, bool is_training) override;
+		void backward(const MatXf& prev_out, MatXf& prev_delta) override;
 		void update_weight(float lr, float decay) override;
+		void zero_grad() override;
 		vector<int> output_shape() override;
-		int get_out_block_size() override;
 	private:
-		void calc_batch_mu(const float* prev_out, float* mu);
-		void calc_batch_var(const float* prev_out, const float* mu, float* vat);
-		void normalize_and_shift(const float* prev_out, const float* mu, const float* var);
-		void update_move_mu_move_var();
+		void calc_batch_mu(const MatXf& prev_out);
+		void calc_batch_var(const MatXf& prev_out);
+		void normalize_and_shift(const MatXf& prev_out, bool is_training);
 	};
 
 	BatchNorm2d::BatchNorm2d(float eps, float momentum) :
-		Layer(BATCHNORM2D),
+		Layer(LayerType::BATCHNORM2D),
 		batch(0),
-		channels(0),
-		in_h(0),
-		in_w(0),
-		out_block_size(0),
+		ch(0),
+		h(0),
+		w(0),
+		hw(0),
 		eps(eps),
 		momentum(momentum) {}
 
-	BatchNorm2d::~BatchNorm2d()
+	void BatchNorm2d::set_layer(const vector<int>& input_shape)
 	{
-		delete_memory(output);
-		delete_memory(delta);
-		delete_memory(xhat);
-		delete_memory(move_mu);
-		delete_memory(move_var);
-		delete_memory(mu);
-		delete_memory(var);
-		delete_memory(gamma);
-		delete_memory(dgamma);
-		delete_memory(beta);
-		delete_memory(dbeta);
+		assert(input_shape.size() == 4 && "BatchNorm2d::set_layer(const vector<int>&): Must be followed by 2d layer.");
+
+		batch = input_shape[0];
+		ch = input_shape[1];
+		h = input_shape[2];
+		w = input_shape[3];
+		hw = h * w;
+
+		output.resize(batch * ch, hw);
+		delta.resize(batch * ch, hw);
+		xhat.resize(batch * ch, hw);
+		dxhat.resize(batch * ch, hw);
+		move_mu.resize(ch);
+		move_var.resize(ch);
+		mu.resize(ch);
+		var.resize(ch);
+		gamma.resize(ch);
+		dgamma.resize(ch);
+		beta.resize(ch);
+		dbeta.resize(ch);
+		sum1.resize(ch);
+		sum2.resize(ch);
+
+		move_mu.setZero();
+		move_var.setZero();
+		gamma.setConstant(1.f);
+		beta.setZero();
 	}
 
-	void BatchNorm2d::set_layer(int batch, const vector<int>& input_shape)
+	void BatchNorm2d::forward(const MatXf& prev_out, bool is_training)
 	{
-		if (input_shape.size() != 3) {
-			throw logic_error("BatchNorm2d::set_layer(int, const vector<int>): Invalid input shape.");
-		}
-
-		this->batch = batch;
-		channels = input_shape[2];
-		in_h = input_shape[0];
-		in_w = input_shape[1];
-		out_block_size = batch * channels * in_h * in_w;
-
-		allocate_memory(output, out_block_size);
-		allocate_memory(delta, out_block_size);
-		allocate_memory(xhat, out_block_size);
-		allocate_memory(move_mu, channels);
-		allocate_memory(move_var, channels);
-		allocate_memory(mu, channels);
-		allocate_memory(var, channels);
-		allocate_memory(gamma, channels);
-		allocate_memory(dgamma, channels);
-		allocate_memory(beta, channels);
-		allocate_memory(dbeta, channels);
-
-		set_zero(move_mu, channels);
-		set_zero(move_var, channels);
-		set_one(gamma, channels);
-		set_zero(dgamma, channels);
-		set_zero(beta, channels);
-		set_zero(dbeta, channels);
-	}
-
-	void BatchNorm2d::forward_propagate(const float* prev_out, bool isEval)
-	{
-		if (!isEval) {
-			calc_batch_mu(prev_out, mu);
-			calc_batch_var(prev_out, mu, var);
-			normalize_and_shift(prev_out, mu, var);
-			update_move_mu_move_var();
+		if (is_training) {
+			calc_batch_mu(prev_out);
+			calc_batch_var(prev_out);
+			normalize_and_shift(prev_out, is_training);
+			// update moving mu and var
+			move_mu = move_mu * momentum + mu * (1 - momentum);
+			move_var = move_var * momentum + var * (1 - momentum);
 		}
 		else {
-			normalize_and_shift(prev_out, move_mu, move_var);
+			normalize_and_shift(prev_out, is_training);
 		}
 	}
 
-	void BatchNorm2d::calc_batch_mu(const float* prev_out, float* mu)
+	void BatchNorm2d::calc_batch_mu(const MatXf& prev_out)
 	{
-		set_zero(mu, channels);
-		int im_size = in_h * in_w;
+		mu.setZero();
 		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				int offset = im_size * (c + channels * n);
-				const float* begin = prev_out + offset;
-				mu[c] += std::accumulate(begin, begin + im_size, 0.0F) / im_size / batch;
+			for (int c = 0; c < ch; c++) {
+				mu[c] += prev_out.row(c + ch * n).mean() / batch;
 			}
 		}
 	}
 
-	void BatchNorm2d::calc_batch_var(const float* prev_out, const float* mu, float* vat)
+	void BatchNorm2d::calc_batch_var(const MatXf& prev_out)
 	{
-		set_zero(var, channels);
-		int im_size = in_h * in_w;
+		var.setZero();
 		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				int temp = c + channels * n;
+			for (int c = 0; c < ch; c++) {
+				int i = c + ch * n;
 				float m = mu[c];
-				float v = 0.0F;
-				for (int i = 0; i < in_h; i++) {
-					for (int j = 0; j < in_w; j++) {
-						int idx = j + in_w * (i + in_h * temp);
-						float dif = prev_out[idx] - m;
-						v += dif * dif;
-					}
+				float v = 0.f;
+				for (int j = 0; j < hw; j++) {
+					float diff = prev_out(i, j) - m;
+					v += diff * diff;
 				}
-				var[c] += v / im_size / batch;
+				var[c] += v / hw / batch;
 			}
 		}
-
-		/*for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				float _mu = mu[c];
-				int offset = im_size * (c + channels * n);
-				const float* begin = prev_out + offset;
-				var[c] += std::accumulate(begin, begin + im_size, 0.0F,
-					[&](const float& sum, const float& elem) {
-					return sum + (elem - _mu) * (elem - _mu);
-				});
-				var[c] /= denominator;
-			}
-		}*/
 	}
 
-	void BatchNorm2d::normalize_and_shift(const float* prev_out, const float* mu, const float* var)
+	void BatchNorm2d::normalize_and_shift(const MatXf& prev_out, bool is_training)
 	{
+		const float* M = mu.data();
+		const float* V = var.data();
+
+		if (!is_training) {
+			M = move_mu.data();
+			V = move_var.data();
+		}
+
 		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				int temp = c + channels * n;
-				float m = mu[c];
-				float s = std::sqrt(var[c] + eps);
+			for (int c = 0; c < ch; c++) {
+				int i = c + ch * n;
+				float m = M[c];
+				float s = std::sqrt(V[c] + eps);
 				float g = gamma[c];
 				float b = beta[c];
-				for (int i = 0; i < in_h; i++) {
-					for (int j = 0; j < in_w; j++) {
-						int idx = j + in_w * (i + in_h * temp);
-						xhat[idx] = (prev_out[idx] - m) / s;
-						output[idx] = g * xhat[idx] + b;
-					}
+				for (int j = 0; j < hw; j++) {
+					xhat(i, j) = (prev_out(i, j) - m) / s;
+					output(i, j) = g * xhat(i, j) + b;
 				}
 			}
 		}
 	}
 
-	void BatchNorm2d::update_move_mu_move_var()
-	{
-		for (int c = 0; c < channels; c++) {
-			move_mu[c] = move_mu[c] * momentum + mu[c] * (1 - momentum);
-			move_var[c] = move_var[c] * momentum + var[c] * (1 - momentum);
-		}
-	}
-
-	void BatchNorm2d::backward_propagate(const float* prev_out, float* prev_delta, bool isFirst)
+	void BatchNorm2d::backward(const MatXf& prev_out, MatXf& prev_delta)
 	{
 		// calc dxhat
-		float* dxhat = new float[out_block_size];
 		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				int temp = c + channels * n;
+			for (int c = 0; c < ch; c++) {
+				int i = c + ch * n;
 				float g = gamma[c];
-				for (int i = 0; i < in_h; i++) {
-					for (int j = 0; j < in_w; j++) {
-						int idx = j + in_w * (i + in_h * temp);
-						dxhat[idx] = delta[idx] * g;
-					}
+				for (int j = 0; j < hw; j++) {
+					dxhat(i, j) = delta(i, j) * g;
 				}
+			}
+		}
+
+		// calc Sum(dxhat), Sum(dxhat * xhat)
+		for (int n = 0; n < batch; n++) {
+			for (int c = 0; c < ch; c++) {
+				int i = c + ch * n;
+				float s1 = 0.f;
+				float s2 = 0.f;
+				for (int j = 0; j < hw; j++) {
+					s1 += dxhat(i, j);
+					s2 += dxhat(i, j) * xhat(i, j);
+				}
+				sum1[c] += s1 / hw;
+				sum2[c] += s2 / hw;
 			}
 		}
 
 		// calc dx, dgamma, dbeta
-		float* sum1 = new float[channels];
-		float* sum2 = new float[channels];
-
-		set_zero(sum1, channels);
-		set_zero(sum2, channels);
-
-		int im_size = in_h * in_w;
-		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				int temp = c + channels * n;
-				float s1 = 0.0F;
-				float s2 = 0.0F;
-				for (int i = 0; i < in_h; i++) {
-					for (int j = 0; j < in_w; j++) {
-						int idx = j + in_w * (i + in_h * temp);
-						s1 += dxhat[idx];
-						s2 += dxhat[idx] * xhat[idx];
-					}
-				}
-				sum1[c] += s1 / im_size;
-				sum2[c] += s2 / im_size;
-			}
-		}
-		
 		float m = (float)batch;
 		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				int temp = c + channels * n;
+			for (int c = 0; c < ch; c++) {
+				int i = c + ch * n;
 				float s1 = sum1[c];
 				float s2 = sum2[c];
-				float dg = 0.0F;
-				float db = 0.0F;
+				float dg = 0.f;
+				float db = 0.f;
 				float denominator = m * std::sqrt(var[c] + eps);
-				for (int i = 0; i < in_h; i++) {
-					for (int j = 0; j < in_w; j++) {
-						int idx = j + in_w * (i + in_h * temp);
-						prev_delta[idx] = (m * dxhat[idx]) - s1 - (xhat[idx] * s2);
-						prev_delta[idx] /= denominator;
-						dg += (xhat[idx] * delta[idx]);
-						db += (delta[idx]);
-					}
+				for (int j = 0; j < hw; j++) {
+					prev_delta(i, j) = (m * dxhat(i, j)) - s1 - (xhat(i, j) * s2);
+					prev_delta(i, j) /= denominator;
+					dg += (xhat(i, j) * delta(i, j));
+					db += delta(i, j);
 				}
 				dgamma[c] += dg;
 				dbeta[c] += db;
 			}
 		}
-
-		delete_memory(dxhat);
-		delete_memory(sum1);
-		delete_memory(sum2);
 	}
 
 	void BatchNorm2d::update_weight(float lr, float decay)
 	{
 		float t1 = (1 - (2 * lr * decay) / batch);
 		float t2 = lr / batch;
-		for (int c = 0; c < channels; c++) {
-			gamma[c] = t1 * gamma[c] - t2 * dgamma[c];
-			beta[c] = t1 * dbeta[c] - t2 * dbeta[c];
-			dgamma[c] = 0.0F;
-			dbeta[c] = 0.0F;
+		if (t1 != 1) {
+			gamma *= t1;
+			beta *= t1;
 		}
+		gamma -= t2 * dgamma;
+		beta -= t2 * dbeta;
 	}
 
-	vector<int> BatchNorm2d::output_shape() { return { in_h, in_w, channels }; }
+	void BatchNorm2d::zero_grad()
+	{
+		delta.setZero();
+		dxhat.setZero();
+		dgamma.setZero();
+		dbeta.setZero();
+		sum1.setZero();
+		sum2.setZero();
+	}
 
-	int BatchNorm2d::get_out_block_size() { return out_block_size; }
+	vector<int> BatchNorm2d::output_shape() { return { batch, ch, h, w }; }
 }

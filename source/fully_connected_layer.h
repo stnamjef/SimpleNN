@@ -5,134 +5,68 @@ namespace simple_nn
 {
 	class Linear : public Layer
 	{
-	public:
+	private:
 		int batch;
-		int n_input;
-		int n_node;
-		int out_block_size;
-		int weight_block_size;
-		string init_opt;
-		float* W;
-		float* dW;
-		float* b;
-		float* db;
+		int in_feat;
+		int out_feat;
+		Init option;
+		MatXf dW;
+		RowVecXf db;
 	public:
-		Linear(int n_node, string init_opt = "normal");
-		Linear(int n_node, int n_input = 0, string init_opt = "normal");
-		~Linear();
-		void set_layer(int batch, const vector<int>& input_shape) override;
-		void forward_propagate(const float* prev_out, bool isEval) override;
-		void backward_propagate(const float* prev_out, float* prev_delta, bool isFirst) override;
+		MatXf W;
+		RowVecXf b;
+		Linear(int in_features, int out_features, Init option = Init::XavierUniform);
+		void set_layer(const vector<int>& input_shape) override;
+		void forward(const MatXf& prev_out, bool is_training) override;
+		void backward(const MatXf& prev_out, MatXf& prev_delta) override;
 		void update_weight(float lr, float decay) override;
-		vector<int> input_shape() override;
+		void zero_grad() override;
 		vector<int> output_shape() override;
-		int get_out_block_size() override;
 	};
 
-	Linear::Linear(int n_node, string init_opt) :
-		Layer(LINEAR),
+	Linear::Linear(int in_features, int out_features, Init option) :
+		Layer(LayerType::LINEAR),
 		batch(0),
-		n_input(0),
-		n_node(n_node),
-		out_block_size(0),
-		weight_block_size(0),
-		init_opt(init_opt)
+		in_feat(in_features),
+		out_feat(out_features),
+		option(option) {}
+
+	void Linear::set_layer(const vector<int>& input_shape)
 	{
-		if (init_opt != "normal" && init_opt != "uniform") {
-			throw logic_error("Linear::Linear(int, string, int): Invalid init option.");
-		}
+		batch = input_shape[0];
+
+		output.resize(batch, out_feat);
+		delta.resize(batch, out_feat);
+		W.resize(out_feat, in_feat);
+		dW.resize(out_feat, in_feat);
+		b.resize(out_feat);
+		db.resize(out_feat);
+
+		init_weight(W, in_feat, out_feat, option);
+		b.setZero();
 	}
 
-	Linear::Linear(int n_node, int n_input, string init_opt) :
-		Layer(LINEAR),
-		batch(0),
-		n_input(n_input),
-		n_node(n_node),
-		out_block_size(0),
-		weight_block_size(0),
-		init_opt(init_opt)
+	void Linear::forward(const MatXf& prev_out, bool is_training)
 	{
-		if (init_opt != "normal" && init_opt != "uniform") {
-			throw logic_error("Linear::Linear(int, string, int): Invalid init option.");
-		}
-	}
-
-	Linear::~Linear()
-	{
-		delete_memory(output);
-		delete_memory(delta);
-		delete_memory(W);
-		delete_memory(dW);
-		delete_memory(b);
-		delete_memory(db);
-	}
-
-	void Linear::set_layer(int batch, const vector<int>& input_shape)
-	{
-		this->batch = batch;
-		if (input_shape.size() == 1) {
-			n_input = input_shape[0];
-		}
-		else {
-			int in_h = input_shape[0];
-			int in_w = input_shape[1];
-			int channels = input_shape[2];
-			n_input = in_h * in_w * channels;
-		}
-		out_block_size = batch * n_node;
-		weight_block_size = n_node * n_input;
-		allocate_memory(output, out_block_size);
-		allocate_memory(delta, out_block_size);
-		allocate_memory(W, weight_block_size);
-		allocate_memory(dW, weight_block_size);
-		allocate_memory(b, n_node);
-		allocate_memory(db, n_node);
-		init_weight(W, weight_block_size, n_input, n_node, init_opt);
-		set_zero(dW, weight_block_size);
-		set_zero(b, n_node);
-		set_zero(db, n_node);
-	}
-
-	void Linear::forward_propagate(const float* prev_out, bool isEval)
-	{
-		int M = n_node;
-		int N = 1;
-		int K = n_input;
 		for (int n = 0; n < batch; n++) {
-			const float* A = W;
-			const float* B = prev_out + K * n;
-			float* C = output + M * n;
-			gemm_nn(M, N, K, 1.0F, A, K, B, N, C, N);
-			//cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, 1.0F, A, K, B, N, 0.0F, C, N);
-			std::transform(C, C + M, b, C, std::plus<float>());
+			output.row(n).noalias() = W * prev_out.row(n).transpose();
+			output.row(n).noalias() += b;
 		}
 	}
 
-	void Linear::backward_propagate(const float* prev_out, float* prev_delta, bool isFirst)
+	void Linear::backward(const MatXf& prev_out, MatXf& prev_delta)
 	{
-		int M = n_node;
-		int N = n_input;
-		int K = 1;
+		// dW = delta(Vector) * prev_out(RowVector)
+		// db = delta
 		for (int n = 0; n < batch; n++) {
-			const float* A = delta + M * n;
-			const float* B = prev_out + N * n;
-			float* C = dW;
-			gemm_nt(M, N, K, 1.0F, A, K, B, K, C, N);
-			//cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, M, N, K, 1.0F, A, K, B, K, 0.0F, C, M);
-			std::transform(db, db + n_node, A, db,
-				[](float& _db, const float& delta) { return _db + delta; });
+			dW.noalias() += delta.row(n).transpose() * prev_out.row(n);
+			db.noalias() += delta.row(n);
 		}
 
-		if (!isFirst) {
-			M = n_input;
-			N = 1;
-			K = n_node;
+		// prev_delta = W.T * delta(Vector)
+		if (!is_first) {
 			for (int n = 0; n < batch; n++) {
-				const float* A = W;
-				const float* B = delta + K * n;
-				float* C = prev_delta + M * n;
-				gemm_tn(M, N, K, 1.0F, A, M, B, N, C, N);
-				//cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, M, N, K, 1.0F, A, M, B, N, 0.0F, C, K);
+				prev_delta.row(n).noalias() = W.transpose() * delta.row(n).transpose();
 			}
 		}
 	}
@@ -141,25 +75,22 @@ namespace simple_nn
 	{
 		float t1 = (1 - (2 * lr * decay) / batch);
 		float t2 = lr / batch;
-		for (int i = 0; i < weight_block_size; i++) {
-			W[i] = t1 * W[i] - t2 * dW[i];
-			dW[i] = 0.0F;
+
+		if (t1 != 1) {
+			W *= t1;
+			b *= t1;
 		}
-		for (int i = 0; i < n_node; i++) {
-			b[i] = t1 * b[i] - t2 * db[i];
-			db[i] = 0.0F;
-		}
+
+		W -= t2 * dW;
+		b -= t2 * db;
 	}
 
-	vector<int> Linear::input_shape()
+	void Linear::zero_grad()
 	{
-		if (n_input == 0) {
-			throw logic_error("Linear::input_shape(): Input shape is empty.");
-		}
-		return { n_input };
+		delta.setZero();
+		dW.setZero();
+		db.setZero();
 	}
 
-	vector<int> Linear::output_shape() { return { n_node }; }
-
-	int Linear::get_out_block_size() { return out_block_size; }
+	vector<int> Linear::output_shape() { return { batch, out_feat }; }
 }

@@ -1,6 +1,8 @@
 #pragma once
 #include <iostream>
 #include <iomanip>
+#include <fstream>
+#include <filesystem>
 #include <algorithm>
 #include <functional>
 #include <numeric>
@@ -9,72 +11,118 @@
 #include <cmath>
 #include <chrono>
 #include <random>
-//#include <openblas/cblas.h>
+#include <assert.h>
+#include <Eigen/Dense>
+#include "im2col.h"
+#include "col2im.h"
 using namespace std;
 using namespace chrono;
+using namespace Eigen;
 
 namespace simple_nn
 {
-	template<class T>
-	void allocate_memory(T*& p, int size)
-	{
-		p = new T[size];
-		std::for_each(p, p + size, [](T& elem) { elem = 0; });
-	}
 
-	template<class T>
-	void delete_memory(T*& p)
-	{
-		delete[] p;
-	}
+	typedef Matrix<float, Dynamic, Dynamic, RowMajor> MatXf;
+	typedef Matrix<float, Dynamic, 1> VecXf;
+	typedef Matrix<float, 1, Dynamic> RowVecXf;
+	typedef Matrix<int, Dynamic, Dynamic, RowMajor> MatXi;
+	typedef Matrix<int, Dynamic, 1> VecXi;
 
-	void set_zero(float* p, int size)
+	void write_file(const MatXf& data, int channels, string fname)
 	{
-		std::for_each(p, p + size, [](float& elem) { elem = 0.0F; });
-	}
-
-	void set_one(float* p, int size)
-	{
-		std::for_each(p, p + size, [](float& elem) { elem = 1.0F; });
-	}
-
-	template<class T>
-	void print(const T* p, int batch, int channels, int height, int width)
-	{
-		for (int n = 0; n < batch; n++) {
-			for (int c = 0; c < channels; c++) {
-				for (int i = 0; i < height; i++) {
-					for (int j = 0; j < width; j++) {
-						cout << fixed << setprecision(4) << setw(10);
-						cout << p[j + width * (i + height * (c + channels * n))];
+		ofstream fout(fname, std::ios::app);
+		if (channels != 0) {
+			int n_row = (int)data.rows() / channels; // batch size
+			int n_col = (int)data.cols() * channels; // feature size * channels
+			for (int i = 0; i < n_row; i++) {
+				const float* begin = data.data() + n_col * i;
+				for (int j = 0; j < n_col; j++) {
+					fout << *begin;
+					if (j == n_col - 1) {
+						fout << endl;
 					}
-					cout << '\n';
+					else {
+						fout << ',';
+					}
+					begin++;
 				}
-				cout << '\n';
 			}
-			cout << '\n';
+		}
+		else {
+			for (int i = 0; i < data.rows(); i++) {
+				for (int j = 0; j < data.cols(); j++) {
+					fout << data(i, j);
+					if (j == data.cols() - 1) {
+						fout << endl;
+					}
+					else {
+						fout << ',';
+					}
+				}
+			}
+		}
+		fout.close();
+	}
+
+	enum class Init
+	{
+		LecunNormal,
+		LecunUniform,
+		XavierNormal,
+		XavierUniform,
+		KaimingNormal,
+		KaimingUniform,
+		Normal,
+		Uniform
+	};
+
+	void init_weight(MatXf& W, int fan_in, int fan_out, Init option)
+	{
+		unsigned seed = (unsigned)chrono::steady_clock::now().time_since_epoch().count();
+		default_random_engine e(4);
+
+		if (option == Init::LecunNormal) {
+			float s = std::sqrt(1.f / fan_in);
+			normal_distribution<float> dist(0, s);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else if (option == Init::LecunUniform) {
+			float r = std::sqrt(1.f / fan_in);
+			uniform_real_distribution<float> dist(-r, r);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else if (option == Init::XavierNormal) {
+			float s = std::sqrt(2.f / (fan_in + fan_out));
+			normal_distribution<float> dist(0, s);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else if (option == Init::XavierUniform) {
+			float r = std::sqrt(6.f / (fan_in + fan_out));
+			uniform_real_distribution<float> dist(-r, r);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else if (option == Init::KaimingNormal) {
+			float s = std::sqrt(2.f / fan_in);
+			normal_distribution<float> dist(0, s);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else if (option == Init::KaimingUniform) {
+			float r = std::sqrt(6.f / fan_in);
+			uniform_real_distribution<float> dist(-r, r);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else if (option == Init::Normal) {
+			normal_distribution<float> dist(0.f, 0.1f);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
+		}
+		else {
+			uniform_real_distribution<float> dist(-0.01f, 0.01f);
+			std::for_each(W.data(), W.data() + W.size(), [&](float& elem) { elem = dist(e); });
 		}
 	}
 
 	int calc_outsize(int in_size, int kernel_size, int stride, int pad)
 	{
 		return (int)std::floor((in_size + 2 * pad - kernel_size) / stride) + 1;
-	}
-
-	void init_weight(float* W, int size, int n_in, int n_out, string init_opt)
-	{
-		unsigned seed = (unsigned)chrono::steady_clock::now().time_since_epoch().count();
-		default_random_engine e(444);
-
-		if (init_opt == "normal") {
-			float var = std::sqrt(2.0F / (n_in + n_out));
-			normal_distribution<float> dist(0, var);
-			std::for_each(W, W + size, [&](float& elem) { elem = dist(e); });
-		}
-		else {
-			float r = 1 / std::sqrt((float)n_in);
-			uniform_real_distribution<float> dist(-r, r);
-			std::for_each(W, W + size, [&](float& elem) { elem = dist(e); });
-		}
 	}
 }
