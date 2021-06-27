@@ -9,13 +9,13 @@ namespace simple_nn
 		int batch;
 		int in_feat;
 		int out_feat;
-		Init option;
+		string option;
 		MatXf dW;
 		RowVecXf db;
 	public:
 		MatXf W;
 		RowVecXf b;
-		Linear(int in_features, int out_features, Init option = Init::XavierUniform);
+		Linear(int in_features, int out_features, string option);
 		void set_layer(const vector<int>& input_shape) override;
 		void forward(const MatXf& prev_out, bool is_training) override;
 		void backward(const MatXf& prev_out, MatXf& prev_delta) override;
@@ -24,7 +24,7 @@ namespace simple_nn
 		vector<int> output_shape() override;
 	};
 
-	Linear::Linear(int in_features, int out_features, Init option) :
+	Linear::Linear(int in_features, int out_features, string option) :
 		Layer(LayerType::LINEAR),
 		batch(0),
 		in_feat(in_features),

@@ -18,7 +18,7 @@ namespace simple_nn
 		int kh;
 		int kw;
 		int pad;
-		Init option;
+		string option;
 		MatXf dkernel;
 		VecXf dbias;
 		MatXf im_col;
@@ -26,7 +26,7 @@ namespace simple_nn
 		MatXf kernel;
 		VecXf bias;
 		Conv2d(int in_channels, int out_channels, int kernel_size, int padding,
-			Init option = Init::XavierUniform);
+			string option);
 		void set_layer(const vector<int>& input_shape) override;
 		void forward(const MatXf& prev_out, bool is_training) override;
 		void backward(const MatXf& prev_out, MatXf& prev_delta) override;
@@ -40,7 +40,7 @@ namespace simple_nn
 		int out_channels,
 		int kernel_size,
 		int padding,
-		Init option
+		string option
 	) :
 		Layer(LayerType::CONV2D),
 		batch(0),

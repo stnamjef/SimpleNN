@@ -14,8 +14,6 @@
 
 namespace simple_nn
 {
-	int PROGRESS_BAR_LEGNTH = 30;
-
 	class SimpleNN
 	{
 	private:
@@ -60,7 +58,9 @@ namespace simple_nn
 		}
 
 		// set Loss layer
-		loss->set_layer(net.back()->output_shape());
+		if (loss != nullptr) {
+			loss->set_layer(net.back()->output_shape());
+		}
 	}
 
 	void SimpleNN::fit(const DataLoader& train_loader, int epochs, const DataLoader& valid_loader)
@@ -124,10 +124,10 @@ namespace simple_nn
 			cout << fixed << setprecision(2);
 			cout << " - t: " << sec.count() << 's';
 			cout << " - loss: " << loss / n_batch;
-			cout << ", error: " << error / n_batch * 100 << "%";
+			cout << " - error: " << error / n_batch * 100 << "%";
 			if (n_batch_valid != 0) {
 				cout << " - loss(valid): " << loss_valid / n_batch_valid;
-				cout << ", error(valid): " << error_valid / n_batch_valid * 100 << "%";
+				cout << " - error(valid): " << error_valid / n_batch_valid * 100 << "%";
 			}
 			cout << endl;
 		}
@@ -196,13 +196,7 @@ namespace simple_nn
 
 	void SimpleNN::save(string save_dir, string fname)
 	{
-		if (!std::filesystem::exists(save_dir)) {
-			cout << "Save directory(" << save_dir << ") does not exist." << endl;
-			cout << "Creating the directory..." << endl;
-			std::filesystem::create_directories(save_dir);
-		}
-
-		string path = save_dir + "/" + fname + ".pth";
+		string path = save_dir + "/" + fname;
 		fstream fout(path, ios::out | ios::binary);
 
 		int total_params = count_params();
@@ -218,16 +212,11 @@ namespace simple_nn
 
 	void SimpleNN::load(string save_dir, string fname)
 	{
-		if (!std::filesystem::exists(save_dir)) {
-			cout << "Save directory(" << save_dir << ") does not exist." << endl;
-			exit(1);
-		}
-
-		string path = save_dir + "/" + fname + ".pth";
+		string path = save_dir + "/" + fname;
 		fstream fin(path, ios::in | ios::binary);
 
 		if (!fin) {
-			cout << fname << ".pth does not exist." << endl;
+			cout << path << " does not exist." << endl;
 			exit(1);
 		}
 

@@ -13,10 +13,11 @@ namespace simple_nn
 		return((int)ch1 << 24) + ((int)ch2 << 16) + ((int)ch3 << 8) + ch4;
 	}
 
-	MatXf read_mnist(string path, int n_imgs, bool train = true)
+	MatXf read_mnist(string data_dir, string fname, int n_imgs, bool train = true)
 	{
 		MatXf img;
 
+		string path = data_dir + "/" + fname;
 		ifstream fin(path, ios::binary);
 		if (fin.is_open()) {
 			int magic_number = 0;
@@ -53,22 +54,34 @@ namespace simple_nn
 				}
 			}
 		}
+		else {
+			cout << "The file(" << path << ") does not exist." << endl;
+			exit(1);
+		}
 
 		return img;
 	}
 
-	VecXi read_mnist_label(string path, int n_imgs)
+	VecXi read_mnist_label(string data_dir, string fname, int n_imgs)
 	{
 		VecXi label(n_imgs);
 
+		string path = data_dir + "/" + fname;
 		ifstream fin(path);
-		for (int i = 0; i < n_imgs + 8; ++i) {
-			unsigned char temp = 0;
-			fin.read((char*)&temp, sizeof(temp));
-			if (i > 7) {
-				label[i - 8] = (int)temp;
+		if (fin.is_open()) {
+			for (int i = 0; i < n_imgs + 8; ++i) {
+				unsigned char temp = 0;
+				fin.read((char*)&temp, sizeof(temp));
+				if (i > 7) {
+					label[i - 8] = (int)temp;
+				}
 			}
 		}
+		else {
+			cout << "The file(" << path << ") does not exist." << endl;
+			exit(1);
+		}
+
 		return label;
 	}
 }

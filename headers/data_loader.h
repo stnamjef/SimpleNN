@@ -8,15 +8,19 @@ namespace simple_nn
 	private:
 		int n_batch;
 		int batch;
-		int channels;
-		int height;
-		int width;
+		int ch;
+		int h;
+		int w;
+		int chhw;
 		MatXf X;
 		VecXi Y;
 		vector<vector<int>> batch_indices;
 	public:
+		DataLoader();
 		DataLoader(MatXf& X, VecXi& Y, int batch, int channels,
-					int height, int width, bool shuffle = true);
+					int height, int width, bool shuffle);
+		void load(MatXf& X, VecXi& Y, int batch, int channels,
+			int height, int width, bool shuffle);
 		int size() const;
 		vector<int> input_shape() const;
 		MatXf get_x(int i) const;
@@ -24,6 +28,9 @@ namespace simple_nn
 	private:
 		void generate_batch_indices(bool shuffle);
 	};
+
+	DataLoader::DataLoader() :
+		n_batch(0), batch(0), ch(0), h(0), w(0), chhw(0) {}
 
 	DataLoader::DataLoader(
 		MatXf& X,
@@ -38,18 +45,32 @@ namespace simple_nn
 		Y(std::move(Y)),
 		n_batch(0),
 		batch(batch),
-		channels(channels),
-		height(height),
-		width(width)
+		ch(channels),
+		h(height),
+		w(width),
+		chhw(channels * height * width)
 	{
-		int n_img = (int)this->X.size() / (channels * height * width);
-		n_batch = n_img / batch;
+		n_batch = (int)this->X.rows() / ch / batch;
+		generate_batch_indices(shuffle);
+	}
+
+	void DataLoader::load(MatXf& X, VecXi& Y, int batch, int channels,
+		int height, int width, bool shuffle)
+	{
+		this->X = std::move(X);
+		this->Y = std::move(Y);
+		this->batch = batch;
+		ch = channels;
+		h = height;
+		w = width;
+		chhw = ch * h * w;
+		n_batch = (int)this->X.rows() / ch / batch;
 		generate_batch_indices(shuffle);
 	}
 
 	int DataLoader::size() const { return n_batch; }
 
-	vector<int> DataLoader::input_shape() const { return { batch, channels, height, width }; }
+	vector<int> DataLoader::input_shape() const { return { batch, ch, h, w }; }
 
 	void DataLoader::generate_batch_indices(bool shuffle)
 	{
@@ -71,19 +92,14 @@ namespace simple_nn
 
 	MatXf DataLoader::get_x(int i) const
 	{
-		MatXf batch_x(batch * channels, height * width);
+		MatXf batch_x(batch * ch, h * w);
 		for (int j = 0; j < batch; j++) {
-			for (int c = 0; c < channels; c++) {
-				batch_x.row(c + channels * j) = X.row(c + channels * batch_indices[i][j]);
-			}
+			const float* first = X.data() + batch_indices[i][j] * chhw;
+			const float* last = first + chhw;
+			float* dest = batch_x.data() + j * chhw;
+			std::copy(first, last, dest);
 		}
 		return batch_x;
-
-		/*MatXf batch_x(batch, channels * height * width);
-		for (int j = 0; j < batch_indices[i].size(); j++) {
-			batch_x.row(j) = X.row(batch_indices[i][j]);
-		}
-		return batch_x;*/
 	}
 
 	VecXi DataLoader::get_y(int i) const
